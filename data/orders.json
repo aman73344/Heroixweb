@@ -1,0 +1,86 @@
+[
+  {
+    "id": "ORD-007",
+    "date": "2026-03-27",
+    "customer": "Najaf Abbas",
+    "email": "",
+    "phone": "03044264614",
+    "address": "Zafar coloney",
+    "city": "Lahore",
+    "items": 2,
+    "total": 1250,
+    "status": "pending"
+  },
+  {
+    "id": "ORD-006",
+    "date": "2026-03-27",
+    "customer": "gando",
+    "email": "aman723344@gmail.com",
+    "phone": "03084824939",
+    "address": "rahata park",
+    "city": "Lahore",
+    "items": 2,
+    "total": 1250,
+    "status": "pending"
+  },
+  {
+    "id": "ORD-005",
+    "date": "2026-03-27",
+    "customer": "Ali",
+    "email": "",
+    "phone": "03084824939",
+    "address": "Rahat park",
+    "city": "Lahore",
+    "items": 2,
+    "total": 1250,
+    "status": "pending"
+  },
+  {
+    "id": "ORD-001",
+    "date": "2026-03-25",
+    "customer": "Ahmed Khan",
+    "email": "ahmed@example.com",
+    "phone": "0300-1234567",
+    "address": "123 Main St",
+    "city": "Karachi",
+    "items": 2,
+    "total": 1398,
+    "status": "shipped"
+  },
+  {
+    "id": "ORD-002",
+    "date": "2026-03-24",
+    "customer": "Fatima Ali",
+    "email": "fatima@example.com",
+    "phone": "0300-7654321",
+    "address": "456 Oak Ave",
+    "city": "Lahore",
+    "items": 1,
+    "total": 899,
+    "status": "processing"
+  },
+  {
+    "id": "ORD-003",
+    "date": "2026-03-23",
+    "customer": "Ali Hassan",
+    "email": "ali@example.com",
+    "phone": "0300-5555555",
+    "address": "789 Pine Rd",
+    "city": "Islamabad",
+    "items": 3,
+    "total": 1847,
+    "status": "pending"
+  },
+  {
+    "id": "ORD-004",
+    "date": "2026-03-22",
+    "customer": "Zainab Mohammad",
+    "email": "zainab@example.com",
+    "phone": "0300-9999999",
+    "address": "321 Elm St",
+    "city": "Multan",
+    "items": 1,
+    "total": 799,
+    "status": "delivered"
+  }
+]

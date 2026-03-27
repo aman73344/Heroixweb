@@ -1,0 +1,137 @@
+[
+  {
+    "id": "aquaman",
+    "name": "Aquaman Trident",
+    "category": "DC",
+    "price": 599,
+    "description": "Aquaman trident keychain with ocean blue accents"
+  },
+  {
+    "id": "attack-titan",
+    "name": "Attack on Titan",
+    "category": "Anime",
+    "price": 549,
+    "description": "Dynamic action keychain featuring the Scout Regiment emblem"
+  },
+  {
+    "id": "batman",
+    "name": "Batman Icon",
+    "category": "Superhero",
+    "price": 599,
+    "description": "Dark Knight Batman emblem keychain with premium finish"
+  },
+  {
+    "id": "demon-slayer",
+    "name": "Demon Slayer",
+    "category": "Anime",
+    "price": 649,
+    "description": "Beautiful Demon Slayer Corps insignia keychain with sword charm"
+  },
+  {
+    "id": "flash",
+    "name": "The Flash Lightning",
+    "category": "DC",
+    "price": 549,
+    "description": "The Flash lightning bolt keychain with metallic finish"
+  },
+  {
+    "id": "football-trophy",
+    "name": "Football Trophy",
+    "category": "Sports",
+    "price": 449,
+    "description": "Golden football trophy keychain for sports enthusiasts"
+  },
+  {
+    "id": "iron-man",
+    "name": "Iron Man Arc Reactor",
+    "category": "Marvel",
+    "price": 699,
+    "description": "Glowing Iron Man arc reactor keychain replica"
+  },
+  {
+    "id": "jujutsu-kaisen",
+    "name": "Jujutsu Kaisen",
+    "category": "Anime",
+    "price": 599,
+    "description": "Sorcery-themed keychain with Jujutsu High emblem"
+  },
+  {
+    "id": "messi-10",
+    "name": "Lionel Messi 10",
+    "category": "Sports",
+    "price": 499,
+    "description": "Lionel Messi football icon keychain with premium quality"
+  },
+  {
+    "id": "my-hero",
+    "name": "My Hero Academia",
+    "category": "Anime",
+    "price": 499,
+    "description": "Heroes and villains collection keychain from the hit series"
+  },
+  {
+    "id": "neon-genesis",
+    "name": "Neon Genesis Evangelion",
+    "category": "Anime",
+    "price": 599,
+    "description": "Classic mecha anime keychain with iconic EVA Unit design"
+  },
+  {
+    "id": "prod-1774443498134",
+    "name": "Joker keychain",
+    "category": "DC",
+    "price": 500,
+    "stock": 5,
+    "description": "🃏 Joker (Spinning) Rs 500 – Madness Unleashed Edition\nWhy fit in, when you can watch the world burn? 🔥\nCarry the Clown Prince of Crime with you — sinister grin, cold eyes, pure chaos.\n\n🃏 Wicked enamel finish that screams insanity\n🩸 Made for the dark souls and Gotham’s misfits\n💰 Rs 500 only\n📦 Limited stock – DM before it disappears\n🚚 Delivery across Pakistan\n\n#Joker #WhySoSerious #ChaosReigns #HeroixKeychains #GothamMadness #DarkCollectibles #DCVillain #KeychainDrop #hahaha"
+  },
+  {
+    "id": "prod-1774524703937",
+    "name": "Spiderman Spinning",
+    "category": "Marvel",
+    "price": 500,
+    "stock": 20,
+    "description": "🕷️ Spider-Man Keychain Rs 550 – Swing into Action!\n\nPower up your everyday carry with this high-detail Spider-Man keychain, capturing the iconic web-slinger in his classic dynamic pose. Whether you’re a Marvel superfan or just love superhero style, this keychain is a must-have!\n\n🔥 Premium Quality | Bold Design\n💰 Only Rs 550\n📩 DM now to grab yours!\n🚚 Nationwide delivery available\n\n#SpiderMan #Marvel #SuperheroKeychain #AnimeMerchPK #ComicBookVibes #HeroixKeychains #WebSlinger #SpideyFan #KeychainDrop"
+  },
+  {
+    "id": "ronaldo-7",
+    "name": "Cristiano Ronaldo CR7",
+    "category": "Sports",
+    "price": 499,
+    "description": "Cristiano Ronaldo CR7 football legend keychain"
+  },
+  {
+    "id": "spider-man",
+    "name": "Spider-Man Web",
+    "category": "Marvel",
+    "price": 549,
+    "description": "Spider-Man web design keychain with red and blue finish"
+  },
+  {
+    "id": "steins-gate",
+    "name": "Steins;Gate",
+    "category": "Anime",
+    "price": 549,
+    "description": "Time travel sci-fi keychain with iconic lab emblem"
+  },
+  {
+    "id": "superman",
+    "name": "Superman Shield",
+    "category": "Superhero",
+    "price": 599,
+    "description": "Iconic Superman S shield keychain with vibrant colors"
+  },
+  {
+    "id": "thor-hammer",
+    "name": "Thor Mjolnir",
+    "category": "Marvel",
+    "price": 749,
+    "description": "Mighty Mjolnir hammer keychain with detailed sculpting"
+  },
+  {
+    "id": "wonder-woman",
+    "name": "Wonder Woman Lasso",
+    "category": "Superhero",
+    "price": 649,
+    "description": "Wonder Woman inspired keychain with golden accents"
+  }
+]
