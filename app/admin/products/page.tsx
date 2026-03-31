@@ -72,6 +72,10 @@ export default function ProductsPage() {
             price: p.price,
             stock: p.stock,
             description: p.description || "",
+            image: p.image || p.images?.[0] || "",
+            images: p.images || [],
+            rating: p.rating || 4.5,
+            reviews: p.reviews || 0,
           })),
         }),
       });
@@ -96,13 +100,27 @@ export default function ProductsPage() {
     const files = e.target.files;
     if (files) {
       Array.from(files).forEach((file) => {
+        if (!file.type.startsWith('image/')) {
+          alert('Please select an image file.');
+          return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          alert('Image file is too large. Please select an image under 5MB.');
+          return;
+        }
         const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64 = reader.result as string;
-          setForm((prev) => ({
-            ...prev,
-            images: [...prev.images, base64].slice(0, 5),
-          }));
+        reader.onload = (event) => {
+          const result = event.target?.result;
+          if (result && typeof result === 'string') {
+            setForm((prev) => ({
+              ...prev,
+              images: [...prev.images, result].slice(0, 5),
+            }));
+          }
+        };
+        reader.onerror = () => {
+          console.error('Error reading file');
+          alert('Error reading file. Please try again.');
         };
         reader.readAsDataURL(file);
       });
@@ -181,7 +199,7 @@ export default function ProductsPage() {
         description: product.description,
         price: product.price,
         category: product.category,
-        stock: product.stock,
+        stock: (product as any).stock ?? 1,
         rating: product.rating,
         images: product.images || [product.image],
       });
@@ -427,12 +445,12 @@ export default function ProductsPage() {
                 </span>
                 <span
                   className={`text-xs px-2 py-1 rounded ${
-                    product.inStock
+                    (product as any).stock > 0
                       ? "bg-green-500/20 text-green-400"
                       : "bg-red-500/20 text-red-400"
                   }`}
                 >
-                  {product.inStock ? "In Stock" : "Out of Stock"}
+                  {(product as any).stock > 0 ? "In Stock" : "Out of Stock"}
                 </span>
               </div>
               <div className="text-xs text-muted-foreground flex items-center gap-1">

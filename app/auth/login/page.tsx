@@ -2,7 +2,6 @@
 
 import { Suspense, useState, FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,7 +13,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') || '/admin';
 
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -29,7 +28,7 @@ function LoginForm() {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
@@ -56,13 +55,13 @@ function LoginForm() {
               <span className="text-white font-bold text-lg">H</span>
             </div>
           </div>
-          <h1 className="text-2xl font-bold text-foreground">HEROIX Admin</h1>
+          <h1 className="text-2xl font-bold text-foreground">Admin Login</h1>
           <p className="text-sm text-muted-foreground">Sign in to manage your store</p>
         </div>
 
         <div className="bg-accent/10 border border-accent/20 rounded-lg p-3">
           <p className="text-xs text-muted-foreground text-center">
-            Demo: Use username <strong>admin</strong> and password <strong>admin123</strong>
+            Use email <strong>aman723344@gmail.com</strong> and password <strong>admin123</strong>
           </p>
         </div>
 
@@ -74,15 +73,15 @@ function LoginForm() {
           )}
 
           <div className="space-y-2">
-            <label htmlFor="username" className="block text-sm font-medium text-foreground">
-              Username
+            <label htmlFor="email" className="block text-sm font-medium text-foreground">
+              Email
             </label>
             <Input
-              id="username"
-              type="text"
-              placeholder="admin"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
+              id="email"
+              type="email"
+              placeholder="admin@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
               disabled={isLoading}
               required
               className="bg-background/50 border-border"
@@ -97,7 +96,7 @@ function LoginForm() {
               <Input
                 id="password"
                 type={showPassword ? 'text' : 'password'}
-                placeholder="••••••••"
+                placeholder="Enter password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 disabled={isLoading}
@@ -109,7 +108,7 @@ function LoginForm() {
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showPassword ? '👁️' : '👁️‍🗨️'}
+                {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
           </div>
@@ -123,13 +122,10 @@ function LoginForm() {
           </Button>
         </form>
 
-        <div className="text-center space-y-2 pt-4 border-t border-border">
-          <p className="text-sm text-muted-foreground">
-            Customer? <Link href="/" className="text-accent hover:underline">Shop keychains</Link>
-          </p>
-          <p className="text-xs text-muted-foreground">
-            For demo purposes only
-          </p>
+        <div className="text-center pt-4 border-t border-border">
+          <Link href="/" className="text-sm text-accent hover:underline">
+            ← Back to Shop
+          </Link>
         </div>
       </div>
     </Card>

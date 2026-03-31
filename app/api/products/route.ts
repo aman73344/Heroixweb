@@ -6,11 +6,11 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const category = searchParams.get('category');
 
-    const products = getServerProducts();
+    const products = await getServerProducts();
     let filteredProducts = products;
 
     if (category && category !== 'All') {
-      filteredProducts = products.filter(p => p.category === category);
+      filteredProducts = products.filter((p: any) => p.category === category);
     }
 
     return NextResponse.json({
@@ -33,8 +33,7 @@ export async function POST(request: NextRequest) {
     const { action, products, product } = body;
 
     if (action === 'save-all' && Array.isArray(products)) {
-      // Bulk save products from admin
-      const success = saveServerProducts(products);
+      const success = await saveServerProducts(products);
       return NextResponse.json(
         { success, message: 'Products saved' },
         { status: success ? 200 : 500 },
@@ -42,8 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'add' && product) {
-      // Add single product
-      const success = addServerProduct(product);
+      const success = await addServerProduct(product);
       return NextResponse.json(
         { success, message: 'Product added' },
         { status: success ? 200 : 500 },
@@ -51,8 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'delete' && product?.id) {
-      // Delete single product
-      const success = deleteServerProduct(product.id);
+      const success = await deleteServerProduct(product.id);
       return NextResponse.json(
         { success, message: 'Product deleted' },
         { status: success ? 200 : 500 },

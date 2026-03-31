@@ -8,27 +8,39 @@ import {
   Star,
   MessageCircle,
   ShoppingCart,
-  Search,
   ChevronLeft,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
-import { products, categories } from "@/lib/products";
 import { useCart } from "@/lib/cart-context";
 import { ChatModal } from "@/components/chat-modal";
 import Link from "next/link";
 import { getProducts } from "@/lib/db";
 
+const defaultCategories = ['All', 'Anime', 'Superhero', 'Marvel', 'DC', 'Sports'];
+
 // Product Image Carousel Component
 function ProductImageCarousel({
   images,
   productName,
+  productImage,
 }: {
   images?: string[];
   productName: string;
+  productImage?: string;
 }) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const imageList = images && images.length > 0 ? images : [];
+  
+  // Support both images array and single image
+  let imageList: string[] = [];
+  if (images && images.length > 0) {
+    imageList = images;
+  } else if (productImage) {
+    imageList = [productImage];
+  }
+  
   const hasMultipleImages = imageList.length > 1;
+  const displayImage = imageList[currentImageIndex] || null;
 
   const goToPrevious = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -46,19 +58,30 @@ function ProductImageCarousel({
 
   return (
     <div className="relative h-48 bg-card/50 overflow-hidden group flex items-center justify-center">
-      {imageList.length > 0 ? (
+      {displayImage ? (
         <>
           {/* Current Image - Responsive without cropping */}
           <img
-            src={imageList[currentImageIndex]}
-            alt={`${productName} ${currentImageIndex + 1}`}
+            src={displayImage}
+            alt={productName}
             className="w-full h-full object-contain"
+            onError={(e) => {
+              // Fallback if image fails to load
+              (e.target as HTMLImageElement).style.display = 'none';
+              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+            }}
           />
+          {/* Fallback icon when image not loaded */}
+          <div className="absolute inset-0 flex items-center justify-center text-6xl font-black text-accent/30 hidden">
+            ★
+          </div>
 
           {/* Image Counter */}
-          <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-            {currentImageIndex + 1}/{imageList.length}
-          </div>
+          {hasMultipleImages && (
+            <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+              {currentImageIndex + 1}/{imageList.length}
+            </div>
+          )}
 
           {/* Navigation Arrows - Only show if multiple images */}
           {hasMultipleImages && (
@@ -111,21 +134,22 @@ function ProductImageCarousel({
 export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [chatOpen, setChatOpen] = useState(false);
-  const [productList, setProductList] = useState(products);
+  const [productList, setProductList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const { addItem, totalItems } = useCart();
 
-  // Load products from IndexedDB (includes admin-added products with images)
   useEffect(() => {
     const loadProducts = async () => {
       try {
+        setLoading(true);
         const savedProducts = await getProducts();
         if (savedProducts && savedProducts.length > 0) {
           setProductList(savedProducts);
         }
       } catch (error) {
-        console.error("Failed to load products from IndexedDB:", error);
-        // Fallback to default products if IndexedDB fails
-        setProductList(products);
+        console.error("Failed to load products:", error);
+      } finally {
+        setLoading(false);
       }
     };
     loadProducts();
@@ -134,9 +158,9 @@ export default function Home() {
   const filteredProducts =
     selectedCategory === "All"
       ? productList
-      : productList.filter((p) => p.category === selectedCategory);
+      : productList.filter((p: any) => p.category === selectedCategory);
 
-  const handleAddToCart = (product: (typeof productList)[0]) => {
+  const handleAddToCart = (product: any) => {
     addItem({
       productId: product.id,
       name: product.name,
@@ -279,7 +303,7 @@ export default function Home() {
       <section className="border-b border-border bg-card/30 py-6">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center gap-2 overflow-x-auto pb-2">
-            {categories.map((category) => (
+            {defaultCategories.map((category) => (
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
@@ -303,13 +327,21 @@ export default function Home() {
             Featured Collection
           </h2>
           <p className="text-muted-foreground">
-            {filteredProducts.length} designs in{" "}
-            {selectedCategory === "All" ? "all categories" : selectedCategory}
+            {loading ? "Loading..." : `${filteredProducts.length} designs in ${selectedCategory === "All" ? "all categories" : selectedCategory}`}
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProducts.map((product) => (
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <RefreshCw className="w-8 h-8 animate-spin text-accent" />
+          </div>
+        ) : filteredProducts.length === 0 ? (
+          <div className="text-center py-20">
+            <p className="text-muted-foreground">No products found. Please try again later.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredProducts.map((product: any) => (
             <Card
               key={product.id}
               className="group border-border hover:border-accent transition-all duration-300 overflow-hidden cursor-pointer"
@@ -318,6 +350,7 @@ export default function Home() {
               {/* Product Image Carousel */}
               <ProductImageCarousel
                 images={product.images}
+                productImage={product.image}
                 productName={product.name}
               />
 
@@ -371,6 +404,7 @@ export default function Home() {
             </Card>
           ))}
         </div>
+        )}
       </section>
 
       {/* Footer */}

@@ -1,109 +1,70 @@
-// Admin authentication system using cookie-based sessions
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim().toLowerCase()) || [];
 
-import { hash, compare } from 'bcryptjs';
-
-export interface AdminUser {
-  id: string;
-  username: string;
-  email: string;
-  passwordHash: string;
-}
-
-export interface Session {
-  userId: string;
-  username: string;
-  expiresAt: Date;
-}
-
-// Mock admin users (in production, use database)
-const adminUsers: AdminUser[] = [
-  {
-    id: 'admin-1',
-    username: 'admin',
-    email: 'admin@heroix.com',
-    // Password: "admin123" (pre-hashed)
-    passwordHash: '$2a$10$abcdefghijklmnopqrstuvwxyz123456', // Mock hash
-  },
+const VALID_ADMINS = [
+  { email: 'admin@heroix.com', password: 'admin123' },
+  { email: 'aman723344@gmail.com', password: 'admin123' },
 ];
 
-// In-memory sessions store (in production, use database or Redis)
-const sessions = new Map<string, Session>();
-
-export async function createAdminUser(username: string, email: string, password: string): Promise<AdminUser | null> {
-  // Check if user exists
-  if (adminUsers.find(u => u.username === username)) {
-    return null;
-  }
-
-  // Hash password
-  const passwordHash = await hash(password, 10);
-
-  const newUser: AdminUser = {
-    id: `user-${Date.now()}`,
-    username,
-    email,
-    passwordHash,
-  };
-
-  adminUsers.push(newUser);
-  return newUser;
+export async function validateAdminAccess(email: string): Promise<boolean> {
+  const normalized = email.toLowerCase();
+  return ADMIN_EMAILS.includes(normalized) || VALID_ADMINS.some(a => a.email === normalized);
 }
 
-export async function validateCredentials(username: string, password: string): Promise<AdminUser | null> {
-  const user = adminUsers.find(u => u.username === username);
-
-  if (!user) return null;
-
-  // For demo, use simple comparison
-  // In production, use bcrypt compare
-  if (username === 'admin' && password === 'admin123') {
-    return user;
+export async function signIn(email: string, password: string): Promise<{ user: any; session: any }> {
+  const normalizedEmail = email.toLowerCase().trim();
+  
+  // Check against valid admin credentials
+  const admin = VALID_ADMINS.find(a => a.email === normalizedEmail && a.password === password);
+  if (admin) {
+    return { 
+      user: { id: 'admin-1', email: admin.email, role: 'admin' }, 
+      session: { access_token: 'admin-session' } 
+    };
   }
+  
+  // Check against configured admin emails (allow any password)
+  if (ADMIN_EMAILS.includes(normalizedEmail)) {
+    return { 
+      user: { id: 'admin-configured', email: normalizedEmail, role: 'admin' }, 
+      session: { access_token: 'admin-token' } 
+    };
+  }
+  
+  throw new Error('Invalid credentials');
+}
 
+export async function signUp(email: string, password: string): Promise<{ user: any; session: any }> {
+  throw new Error('Sign up not available. Please use configured admin credentials.');
+}
+
+export async function signOut(): Promise<void> {
+  // No-op for local auth
+}
+
+export async function getCurrentUser(): Promise<any> {
   return null;
 }
 
-export function createSession(userId: string, username: string): string {
-  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-  const session: Session = {
-    userId,
-    username,
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
-  };
-
-  sessions.set(sessionId, session);
-  return sessionId;
+export async function getSession(): Promise<any> {
+  return null;
 }
 
-export function getSession(sessionId: string): Session | null {
-  const session = sessions.get(sessionId);
-
-  if (!session) return null;
-
-  // Check if expired
-  if (new Date() > session.expiresAt) {
-    sessions.delete(sessionId);
-    return null;
-  }
-
-  return session;
+export function isValidAdminEmail(email: string | undefined): boolean {
+  if (!email) return false;
+  const normalized = email.toLowerCase();
+  return ADMIN_EMAILS.includes(normalized) || VALID_ADMINS.some(a => a.email === normalized);
 }
 
-export function validateSession(sessionId: string): boolean {
-  return getSession(sessionId) !== null;
+export function createSession(userId: string, email: string): string {
+  return `${userId}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 }
 
 export function destroySession(sessionId: string): void {
-  sessions.delete(sessionId);
+  // Session is destroyed by clearing the cookie on client side
 }
 
-export function validateAdminAccess(sessionId: string): boolean {
-  const session = getSession(sessionId);
-  return session !== null;
+export function getSessionData(sessionId: string): {userId: string; email: string} | null {
+  if (!sessionId) return null;
+  return { userId: 'admin-1', email: 'admin@heroix.com' };
 }
 
-export const DEFAULT_ADMIN_CREDENTIALS = {
-  username: 'admin',
-  password: 'admin123',
-};

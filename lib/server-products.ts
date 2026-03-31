@@ -1,55 +1,51 @@
-// Server-side product storage for chatbot context
-// This is separate from IndexedDB (client-side)
-// Admin page will sync products to this file when adding/updating products
+import { getProductsFromSupabase, saveProductsToSupabase } from './db';
 
-import fs from 'fs';
-import path from 'path';
-
-const PRODUCTS_FILE = path.join(process.cwd(), 'products.json');
-
-interface Product {
+export interface Product {
   id: string;
   name: string;
   category: string;
   price: number;
-  stock: number;
+  stock?: number;
   description?: string;
   images?: string[];
+  rating?: number;
+  reviews?: number;
+  inStock?: boolean;
+  image?: string;
 }
 
-// Initialize empty products file if it doesn't exist
-function ensureProductsFile() {
-  if (!fs.existsSync(PRODUCTS_FILE)) {
-    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify([], null, 2));
-  }
-}
-
-export function getServerProducts(): Product[] {
+export async function getServerProducts(): Promise<Product[]> {
   try {
-    ensureProductsFile();
-    const data = fs.readFileSync(PRODUCTS_FILE, 'utf-8');
-    const products = JSON.parse(data);
-    return Array.isArray(products) ? products : [];
+    const products = await getProductsFromSupabase();
+    return products || [];
   } catch (error) {
-    console.error('Error reading products from file:', error);
+    console.error('Error reading products from Supabase:', error);
     return [];
   }
 }
 
-export function saveServerProducts(products: Product[]): boolean {
+export async function saveServerProducts(products: Product[]): Promise<boolean> {
   try {
-    ensureProductsFile();
-    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
+    // Keep base64 images as-is for Supabase storage
+    const cleanedProducts = products.map(p => ({
+      ...p,
+      image: p.image || p.images?.[0] || '/placeholder.jpg',
+      images: p.images?.length ? p.images : [p.image || '/placeholder.jpg'],
+    }));
+    
+    // Save to Supabase
+    await saveProductsToSupabase(cleanedProducts);
     return true;
   } catch (error) {
-    console.error('Error saving products to file:', error);
+    console.error('Error saving products to Supabase:', error);
     return false;
   }
 }
 
-export function addServerProduct(product: Product): boolean {
+export async function addServerProduct(product: Product): Promise<boolean> {
   try {
-    const products = getServerProducts();
+    // Get existing products
+    const products = await getServerProducts();
     const existingIndex = products.findIndex((p) => p.id === product.id);
 
     if (existingIndex >= 0) {
@@ -58,27 +54,33 @@ export function addServerProduct(product: Product): boolean {
       products.push(product);
     }
 
-    return saveServerProducts(products);
+    // Save to Supabase
+    await saveServerProducts(products);
+    return true;
   } catch (error) {
     console.error('Error adding product:', error);
     return false;
   }
 }
 
-export function deleteServerProduct(productId: string): boolean {
+export async function deleteServerProduct(productId: string): Promise<boolean> {
   try {
-    const products = getServerProducts();
+    // Get existing products
+    const products = await getServerProducts();
     const filtered = products.filter((p) => p.id !== productId);
-    return saveServerProducts(filtered);
+
+    // Save to Supabase
+    await saveServerProducts(filtered);
+    return true;
   } catch (error) {
     console.error('Error deleting product:', error);
     return false;
   }
 }
 
-export function getFormattedProductsForChatbot(): string {
+export async function getFormattedProductsForChatbot(): Promise<string> {
   try {
-    const products = getServerProducts();
+    const products = await getServerProducts();
     if (products.length === 0) {
       return 'No products available currently.';
     }
@@ -96,3 +98,5 @@ export function getFormattedProductsForChatbot(): string {
     return 'Product catalog unavailable.';
   }
 }
+
+

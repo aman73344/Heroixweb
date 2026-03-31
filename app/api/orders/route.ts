@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getOrders, addOrder, updateOrder } from '@/lib/orders-store';
-import { AdminOrder } from '@/lib/chatbot/admin-store';
+import { getOrders, addOrder, updateOrder, AdminOrder } from '@/lib/orders-store';
 
 interface OrderRequest {
   customer: string;
@@ -22,7 +21,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const orderId = searchParams.get('id');
 
-    const orders = getOrders();
+    const orders = await getOrders();
 
     if (orderId) {
       const order = orders.find(o => o.id === orderId);
@@ -61,7 +60,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const orders = getOrders();
+    const orders = await getOrders();
     const orderId = `ORD-${String(orders.length + 1).padStart(3, '0')}`;
 
     const newOrder: AdminOrder = {
@@ -75,9 +74,10 @@ export async function POST(request: NextRequest) {
       items: body.items.length,
       total: body.total,
       status: 'pending',
+      items_data: body.items,
     };
 
-    addOrder(newOrder);
+    await addOrder(newOrder);
 
     return NextResponse.json(
       {
@@ -135,6 +135,41 @@ export async function PATCH(request: NextRequest) {
     console.error('Orders API PATCH error:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to update order' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const orderId = searchParams.get('id');
+
+    if (!orderId) {
+      return NextResponse.json(
+        { success: false, error: 'Order ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const { deleteOrder } = await import('@/lib/orders-store');
+    const success = await deleteOrder(orderId);
+
+    if (!success) {
+      return NextResponse.json(
+        { success: false, error: 'Order not found or could not be deleted' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Order deleted successfully',
+    });
+  } catch (error) {
+    console.error('Orders API DELETE error:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to delete order' },
       { status: 500 }
     );
   }
