@@ -1,10 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Create Supabase client
-export const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+let supabaseInstance: ReturnType<typeof createClient> | null = null;
+
+function getSupabaseClient() {
+  if (!supabaseInstance) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables');
+    }
+    supabaseInstance = createClient(url, key);
+  }
+  return supabaseInstance;
+}
+
+export const supabase = new Proxy({} as ReturnType<typeof createClient>, {
+  get(_target, prop) {
+    return (getSupabaseClient() as any)[prop];
+  },
+});
 
 // Helper functions
 export async function isAdminEmail(email: string): Promise<boolean> {
