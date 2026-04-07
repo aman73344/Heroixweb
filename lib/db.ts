@@ -22,47 +22,11 @@ const DEFAULT_PRODUCTS = [
 
 let productsInitialized = false;
 
-async function initializeProducts(): Promise<void> {
-  if (productsInitialized) return;
-  
-  try {
-    const { data, error } = await supabase
-      .from('products')
-      .select('id')
-      .limit(1);
-    
-    if (error) {
-      console.error('Supabase initialization check error:', error);
-      return;
-    }
-    
-    if (!data || data.length === 0) {
-      console.log('Initializing products in Supabase...');
-      const { error: insertError } = await supabase
-        .from('products')
-        .insert(DEFAULT_PRODUCTS);
-      
-      if (insertError) {
-        console.error('Failed to initialize products:', insertError);
-      } else {
-        console.log('Products initialized successfully');
-      }
-    }
-    
-    productsInitialized = true;
-  } catch (error) {
-    console.error('Error initializing products:', error);
-  }
-}
-
 export async function getProducts(): Promise<any[]> {
-  await initializeProducts();
-  
   try {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('products')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('id, name, category, price, stock, description, image, rating, reviews');
     
     if (error) {
       console.error('Supabase error:', error);
@@ -70,11 +34,10 @@ export async function getProducts(): Promise<any[]> {
     }
     
     if (data && data.length > 0) {
-      // Ensure all products have proper image fields
-      return data.map(p => ({
+      return data.map((p: any) => ({
         ...p,
-        image: p.image || p.images?.[0] || '/placeholder.jpg',
-        images: p.images || (p.image ? [p.image] : ['/placeholder.jpg'])
+        image: p.image || '/placeholder.jpg',
+        images: p.image ? [p.image] : ['/placeholder.jpg']
       }));
     }
     
@@ -86,34 +49,46 @@ export async function getProducts(): Promise<any[]> {
 }
 
 export async function saveProducts(productsToSave: any[]): Promise<void> {
-  try {
-    const cleanedProducts = productsToSave.map(p => {
-      const imgArray = p.images && p.images.length > 0 ? p.images : (p.image ? [p.image] : ['/placeholder.jpg']);
-      return {
-        id: p.id,
-        name: p.name,
-        description: p.description || '',
-        price: p.price,
-        category: p.category || 'Anime',
-        stock: p.stock || 0,
-        image: imgArray[0],
-        images: imgArray,
-        rating: p.rating || 4.5,
-        reviews: p.reviews || 0,
-        created_at: p.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-    });
+  const maxRetries = 2;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const cleanedProducts = productsToSave.map(p => {
+        const img = p.image || p.images?.[0] || '/placeholder.jpg';
+        return {
+          id: p.id,
+          name: p.name,
+          description: p.description || '',
+          price: p.price,
+          category: p.category || 'Anime',
+          stock: p.stock || 0,
+          image: img,
+          rating: p.rating || 4.5,
+          reviews: p.reviews || 0,
+          created_at: p.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+      });
 
-    const { error } = await supabase
-      .from('products')
-      .upsert(cleanedProducts, { onConflict: 'id' });
+      const { error } = await (supabase as any)
+        .from('products')
+        .upsert(cleanedProducts, { onConflict: 'id' });
 
-    if (error) {
-      console.error('Supabase save error:', error);
+      if (error) {
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        console.error('Supabase save error:', error);
+        return;
+      }
+      return;
+    } catch (error) {
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      console.error('Error saving to Supabase:', error);
     }
-  } catch (error) {
-    console.error('Error saving to Supabase:', error);
   }
 }
 
@@ -129,7 +104,7 @@ export async function saveProductsToSupabase(productsToSave: any[]): Promise<voi
       };
     });
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('products')
       .upsert(productsWithTimestamp, { onConflict: 'id' });
 
@@ -158,14 +133,13 @@ export async function addProductToSupabase(product: any): Promise<boolean> {
       stock: product.stock || 0,
       image: product.image || '/placeholder-product.png',
       images: product.images || ['/placeholder-product.png'],
-      inStock: product.inStock ?? true,
       rating: product.rating || 4.5,
       reviews: product.reviews || 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('products')
       .upsert([productData], { onConflict: 'id' });
 
@@ -182,7 +156,7 @@ export async function addProductToSupabase(product: any): Promise<boolean> {
 
 export async function updateProductInSupabase(productId: string, updates: any): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('products')
       .update({
         ...updates,

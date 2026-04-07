@@ -46,46 +46,15 @@ export default function ProductsPage() {
     const saveToDB = async () => {
       try {
         await saveProducts(productList);
-        // Also sync to server for chatbot context
-        await syncProductsToServer(productList);
       } catch (error) {
         console.error("Failed to save products:", error);
       }
     };
-    // Only save if productList is different from initial products
     if (productList !== products) {
       saveToDB();
     }
   }, [productList]);
 
-  const syncProductsToServer = async (productsToSync: any[]) => {
-    try {
-      const response = await fetch("/api/products", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "save-all",
-          products: productsToSync.map((p) => ({
-            id: p.id,
-            name: p.name,
-            category: p.category,
-            price: p.price,
-            stock: p.stock,
-            description: p.description || "",
-            image: p.image || p.images?.[0] || "",
-            images: p.images || [],
-            rating: p.rating || 4.5,
-            reviews: p.reviews || 0,
-          })),
-        }),
-      });
-      if (!response.ok) {
-        console.error("Failed to sync products to server");
-      }
-    } catch (error) {
-      console.error("Error syncing products to server:", error);
-    }
-  };
   const [form, setForm] = useState<ProductForm>({
     name: "",
     description: "",
@@ -140,7 +109,7 @@ export default function ProductsPage() {
       p.category.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
-  const handleAddProduct = () => {
+  const handleAddProduct = async () => {
     if (!form.name || form.price === 0) {
       alert("Please fill required fields");
       return;
@@ -151,31 +120,38 @@ export default function ProductsPage() {
       return;
     }
 
+    const productData = {
+      id: editingProductId || `prod-${Date.now()}`,
+      ...form,
+      image: form.images[0],
+      inStock: form.stock > 0,
+      reviews: 0,
+    };
+
     if (editingProductId) {
-      // Update existing product
       setProductList((prev) =>
         prev.map((p) =>
-          p.id === editingProductId
-            ? {
-                ...p,
-                ...form,
-                image: form.images[0],
-                inStock: form.stock > 0,
-              }
-            : p,
+          p.id === editingProductId ? productData : p,
         ),
       );
-      setEditingProductId(null);
     } else {
-      // Add new product
-      const newProduct = {
-        id: `prod-${Date.now()}`,
-        ...form,
-        image: form.images[0],
-        inStock: form.stock > 0,
-        reviews: 0,
-      };
-      setProductList([...productList, newProduct]);
+      setProductList((prev) => [...prev, productData]);
+    }
+
+    try {
+      const response = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add",
+          product: productData,
+        }),
+      });
+      if (!response.ok) {
+        console.error("Failed to save product to server");
+      }
+    } catch (error) {
+      console.error("Error saving product:", error);
     }
 
     setForm({
@@ -188,6 +164,7 @@ export default function ProductsPage() {
       images: [],
     });
     setShowAddForm(false);
+    setEditingProductId(null);
   };
 
   const handleEditProduct = (productId: string) => {
@@ -207,9 +184,21 @@ export default function ProductsPage() {
     }
   };
 
-  const handleDeleteProduct = (productId: string) => {
+  const handleDeleteProduct = async (productId: string) => {
     if (confirm("Are you sure you want to delete this product?")) {
       setProductList((prev) => prev.filter((p) => p.id !== productId));
+      try {
+        await fetch("/api/products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "delete",
+            product: { id: productId },
+          }),
+        });
+      } catch (error) {
+        console.error("Error deleting product:", error);
+      }
     }
   };
 
@@ -295,9 +284,9 @@ export default function ProductsPage() {
               </label>
               <Input
                 type="number"
-                value={form.price}
+                value={form.price || ''}
                 onChange={(e) =>
-                  setForm({ ...form, price: parseFloat(e.target.value) })
+                  setForm({ ...form, price: parseFloat(e.target.value) || 0 })
                 }
                 placeholder="599"
                 className="bg-background/50 border-border"
@@ -310,9 +299,9 @@ export default function ProductsPage() {
               </label>
               <Input
                 type="number"
-                value={form.stock}
+                value={form.stock || ''}
                 onChange={(e) =>
-                  setForm({ ...form, stock: parseInt(e.target.value) })
+                  setForm({ ...form, stock: parseInt(e.target.value) || 0 })
                 }
                 placeholder="50"
                 className="bg-background/50 border-border"
