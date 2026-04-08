@@ -89,7 +89,7 @@ function findProductsInMessage(
   for (const product of sortedProducts) {
     const nameLower = product.name.toLowerCase();
     
-    // Check for exact match first
+    // Check for exact match (product name appears in message)
     if (lower.includes(nameLower)) {
       if (!found.find(p => p.id === product.id)) {
         found.push({ id: product.id, name: product.name, price: product.price });
@@ -97,12 +97,24 @@ function findProductsInMessage(
       continue;
     }
     
-    // Check for partial matches with word boundaries
+    // Check if ALL significant words (length > 2) from the product name appear in the message
+    // This prevents matching "Batman Logo" when user says "Batman Batarang"
     const nameWords = nameLower.split(/\s+/).filter((w: string) => w.length > 2);
-    if (nameWords.some((word: string) => {
-      const wordBoundaryPattern = new RegExp(`\\b${word}\\b`, 'i');
-      return wordBoundaryPattern.test(lower);
-    })) {
+    
+    // For exact matching: ALL words must appear in the message
+    // This ensures "Batman Batarang" doesn't match when user says "Batman" alone
+    const allWordsMatch = nameWords.every((word: string) => {
+      // Use word boundary to match whole words only
+      const wordPattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i');
+      return wordPattern.test(lower);
+    });
+    
+    // Also check if the product name itself (as a phrase) is close to what's in message
+    // by checking if the first significant word appears with other words from the name
+    const firstWord = nameWords[0] || '';
+    const hasFirstWord = firstWord ? new RegExp(`\\b${escapeRegExp(firstWord)}\\b`, 'i').test(lower) : false;
+    
+    if (allWordsMatch && nameWords.length > 0) {
       if (!found.find(p => p.id === product.id)) {
         found.push({ id: product.id, name: product.name, price: product.price });
       }
@@ -110,6 +122,10 @@ function findProductsInMessage(
   }
   
   return found;
+}
+
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function extractQuantitiesForProducts(
@@ -323,7 +339,11 @@ async function handleOrderFlow(
       items_data: orderState.items,
     };
     
-    await addOrder(newOrder);
+    const saved = await addOrder(newOrder);
+    
+    if (!saved) {
+      return `⚠️ There was an issue saving your order. Please try again or contact support.\n\nOrder details:\n📦 ${itemsList}\n💰 Total: Rs ${total}`;
+    }
     
     return `🎉 Order confirmed!\n\n📦 Order: ${itemsList}\n💰 Total: Rs ${total}\n📍 Delivery to: ${orderState.city}\n\n🆔 Order ID: ${newOrder.id}\n\nYou'll receive a confirmation call shortly. Thanks for shopping with HEROIX!`;
   }

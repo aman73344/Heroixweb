@@ -4,10 +4,17 @@ let supabaseInstance: ReturnType<typeof createClient> | null = null;
 
 function getSupabaseClient() {
   if (!supabaseInstance) {
-   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    // Server-side: use non-NEXT_PUBLIC_ variables first, fallback to NEXT_PUBLIC_
+    const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!url || !key) {
+      console.error('Missing Supabase environment variables:', { 
+        hasUrl: !!url, 
+        hasKey: !!key,
+        supabaseUrl: process.env.SUPABASE_URL,
+        nextPublicUrl: process.env.NEXT_PUBLIC_SUPABASE_URL
+      });
       throw new Error('Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables');
     }
     supabaseInstance = createClient(url, key);

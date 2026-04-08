@@ -36,11 +36,12 @@ export async function getOrders(): Promise<AdminOrder[]> {
   }
 }
 
-export async function addOrder(order: AdminOrder): Promise<void> {
+export async function addOrder(order: AdminOrder): Promise<boolean> {
   const success = await addOrderToSupabase(order);
   if (!success) {
     console.error('Failed to save order to database');
   }
+  return success;
 }
 
 export async function updateOrder(orderId: string, updates: Partial<AdminOrder>): Promise<AdminOrder | null> {

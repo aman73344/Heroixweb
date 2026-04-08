@@ -62,11 +62,11 @@ export default function CheckoutPage() {
         setOrderPlaced(true);
         clearCart();
       } else {
-        alert('Failed to place order. Please try again.');
+        alert(`Failed to place order: ${data.error || 'Please try again.'}`);
       }
     } catch (error) {
       console.error('Order error:', error);
-      alert('Failed to place order. Please try again.');
+      alert('Failed to place order. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
     }

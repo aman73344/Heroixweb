@@ -211,13 +211,18 @@ export interface Order {
 
 export async function getOrders(): Promise<Order[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error, status } = await supabase
       .from('orders')
       .select('*')
       .order('created_at', { ascending: false });
     
     if (error) {
-      console.error('Supabase orders error:', error);
+      console.error('Supabase orders error:', {
+        message: error.message,
+        details: error.details,
+        code: error.code,
+        status
+      });
       return [];
     }
     
@@ -230,7 +235,9 @@ export async function getOrders(): Promise<Order[]> {
 
 export async function addOrderToSupabase(order: Order): Promise<boolean> {
   try {
-    const { error } = await supabase
+    console.log('Attempting to save order:', JSON.stringify(order, null, 2));
+    
+    const { data, error, status } = await supabase
       .from('orders')
       .insert([{
         id: order.id,
@@ -245,12 +252,22 @@ export async function addOrderToSupabase(order: Order): Promise<boolean> {
         status: order.status,
         items_data: order.items_data || [],
         created_at: new Date().toISOString(),
-      }]);
+      }])
+      .select()
+      .single();
 
     if (error) {
-      console.error('Supabase order insert error:', error);
+      console.error('Supabase order insert error:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        status
+      });
       return false;
     }
+    
+    console.log('Order saved successfully:', data);
     return true;
   } catch (error) {
     console.error('Error adding order:', error);
