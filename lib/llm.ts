@@ -72,67 +72,44 @@ export async function generateLLMResponse(
 ): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   
-  console.log('OpenRouter API key available:', !!apiKey, apiKey ? `prefix: ${apiKey.substring(0, 15)}...` : 'none');
-  
-  // If no API key, always use fallback
   if (!apiKey) {
-    console.warn('OpenRouter API key not configured, using enhanced fallback');
     return generateEnhancedFallbackResponse(messages, products);
   }
 
   const systemPrompt = SYSTEM_PROMPT_TEMPLATE(products);
-  const maxRetries = 1;
   
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-          'X-Title': 'HEROIX AI Assistant',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.0-flash-001',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
-          ],
-          max_tokens: 400,
-          temperature: 0.7,
-        }),
-        signal: AbortSignal.timeout(15000), // 15 second timeout
-      });
+  try {
+    // Try Google Gemini Flash (free tier on OpenRouter)
+    const response = await fetch(OPENROUTER_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+        'X-Title': 'HEROIX AI Assistant',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.0-flash',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
 
-      if (response.status === 429) {
-        console.warn('Rate limited, using fallback');
-        return generateEnhancedFallbackResponse(messages, products);
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('OpenRouter API error:', response.status, errorData);
-        return generateEnhancedFallbackResponse(messages, products);
-      }
-
+    if (response.ok) {
       const data: OpenRouterResponse = await response.json();
-
-      if (data.error) {
-        console.error('OpenRouter error:', data.error.message);
-        return generateEnhancedFallbackResponse(messages, products);
-      }
-
       const content = data.choices?.[0]?.message?.content?.trim();
       if (content && content.length > 5) return content;
-      
-      return generateEnhancedFallbackResponse(messages, products);
-    } catch (error: any) {
-      console.error('LLM API call failed:', error.message);
-      return generateEnhancedFallbackResponse(messages, products);
     }
+  } catch (error) {
+    console.log('LLM call failed, using fallback');
   }
   
+  // Fallback to smart local responses
   return generateEnhancedFallbackResponse(messages, products);
 }
 
@@ -143,133 +120,184 @@ function generateEnhancedFallbackResponse(messages: ChatMessage[], products: Pro
   // Ensure products array is valid
   const validProducts = Array.isArray(products) && products.length > 0 ? products : [];
   
+  // Find products that match the message
+  const findMatchingProducts = (searchTerms: string[]) => {
+    if (validProducts.length === 0) return [];
+    return validProducts.filter(p => {
+      const searchText = (p.name + ' ' + p.category + ' ' + (p.description || '')).toLowerCase();
+      return searchTerms.some(term => searchText.includes(term.toLowerCase()));
+    });
+  };
+  
+  // Extract product name from message
+  const extractProductNames = () => {
+    const words = lastMessage.split(/\s+/);
+    const matched: Product[] = [];
+    
+    for (const product of validProducts) {
+      const productNameLower = product.name.toLowerCase();
+      // Check if product name or parts of it appear in message
+      if (productNameLower.split(/\s+/).every(word => word.length > 2 && words.includes(word))) {
+        matched.push(product);
+      }
+    }
+    return matched;
+  };
+  
   // Greeting patterns
-  if (/^(hi|hello|hey|assalam|asalam|khair|salaam|good morning|good evening)/i.test(fullMessage)) {
-    return "Hey there! Welcome to HEROIX! We have amazing anime, superhero & sports keychains. What would you like to see?";
+  if (/^(hi|hello|hey|assalam|asalam|khair|salaam|good morning|good evening|hy|heya)/i.test(fullMessage)) {
+    return "Hey there! 👋 Welcome to HEROIX! We have amazing anime, superhero & sports keychains. Just tell me what you're looking for!";
   }
   
   // Thank you patterns
-  if (/thanks|thank you|shukriya|mersh/i.test(lastMessage)) {
-    return "You're welcome! Is there anything else I can help you with?";
+  if (/thanks|thank you|shukriya|mersh|thnx/i.test(lastMessage)) {
+    return "You're welcome! 😊 Is there anything else I can help you with?";
   }
   
   // Order/buy intent
-  if (/order|buy|chahiye|mangta|leni|chaiye|bhej|bhejna/i.test(lastMessage)) {
-    if (validProducts.length > 0) {
-      return `Great! We have ${validProducts.length} amazing keychains. Just tell me the name of the keychain you want and how many!`;
+  if (/order|buy|chahiye|mangta|leni|chaiye|bhej|bhejna|lagana|order karna/i.test(lastMessage)) {
+    const matchedProducts = extractProductNames();
+    if (matchedProducts.length > 0) {
+      return `Great! I found ${matchedProducts.length} matching keychain(s): ${matchedProducts.slice(0, 5).map(p => p.name).join(', ')}. Which one(s) do you want and how many?`;
     }
-    return "I'd love to help you order! Browse our shop and tell me which keychain catches your eye!";
+    if (validProducts.length > 0) {
+      return `We have ${validProducts.length} amazing keychains! Tell me the name of the keychain you want.`;
+    }
+    return "I'd love to help you order! Tell me which keychain catches your eye!";
   }
   
-  // Anime category - expanded search
-  if (/anime|naruto|one piece|dragon ball|z|attack on titan|demon slayer|jujutsu|evangelion|bleach|aot/i.test(lastMessage)) {
+  // Asking about a specific product
+  const matchedProducts = extractProductNames();
+  if (matchedProducts.length > 0) {
+    const p = matchedProducts[0];
+    return `Yes! We have ${p.name} for Rs ${p.price}. Want to order? Just tell me how many you need!`;
+  }
+  
+  // Search for products by keywords
+  const searchTerms = lastMessage.split(/\s+/).filter(w => w.length > 2);
+  const searchResults = findMatchingProducts(searchTerms);
+  if (searchResults.length > 0) {
+    return `Found these for you: ${searchResults.slice(0, 4).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which one interests you?`;
+  }
+  
+  // Anime category
+  if (/anime|naruto|one piece|dragon ball|z|attack on titan|demon slayer|jujutsu|evangelion|bleach|aot|cosplay/i.test(lastMessage)) {
     const animeProducts = validProducts.filter(p => 
       /anime|naruto|one piece|dragon ball|attack on titan|demon slayer|jujutsu|evangelion|bleach/i.test((p.name + ' ' + p.category).toLowerCase())
     );
     if (animeProducts.length > 0) {
-      return `Anime fan! Check out: ${animeProducts.slice(0, 3).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which one do you like?`;
+      return `Anime fan! 🎌 Check out: ${animeProducts.slice(0, 4).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which one do you like?`;
     }
-    return "We have tons of anime keychains - Naruto, One Piece, Demon Slayer, Dragon Ball Z and more! Browse our Anime category!";
+    return "We have tons of anime keychains - Naruto, One Piece, Demon Slayer, Dragon Ball Z and more!";
   }
   
   // Marvel category
-  if (/marvel|iron man|spider|spiderman|thor|captain america|avenger/i.test(lastMessage)) {
+  if (/marvel|iron man|spider|spiderman|thor|captain america|avenger|xmen/i.test(lastMessage)) {
     const marvelProducts = validProducts.filter(p => 
       /marvel|iron|spider|thor|captain|avenger/i.test((p.name + ' ' + p.category).toLowerCase())
     );
     if (marvelProducts.length > 0) {
-      return `Marvel fan! We've got: ${marvelProducts.slice(0, 3).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which hero is your favorite?`;
+      return `Marvel fan! 🦸 Check out: ${marvelProducts.slice(0, 4).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which hero is your favorite?`;
     }
-    return "We've got Iron Man, Spider-Man, Thor, Captain America and more Marvel heroes! Check our Marvel category.";
+    return "We've got Iron Man, Spider-Man, Thor, Captain America and more Marvel heroes!";
   }
   
   // DC/Superhero category
-  if (/dc|batman|superman|wonder woman|flash|aquaman|justice league/i.test(lastMessage)) {
+  if (/dc|batman|superman|wonder woman|flash|aquaman|justice league|joker|batarang/i.test(lastMessage)) {
     const dcProducts = validProducts.filter(p => 
       /dc|batman|superman|flash|aquaman|wonder/i.test((p.name + ' ' + p.category).toLowerCase())
     );
     if (dcProducts.length > 0) {
-      return `DC fan! Check out: ${dcProducts.slice(0, 3).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which hero do you prefer?`;
+      return `DC fan! 🦇 Check out: ${dcProducts.slice(0, 4).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which hero do you prefer?`;
     }
-    return "We've got Batman, Superman, Wonder Woman, The Flash and more DC heroes! Browse our DC/Superhero category.";
+    return "We've got Batman, Superman, Wonder Woman, The Flash and more DC heroes!";
   }
   
   // Sports category
-  if (/sports|football|soccer|cricket|ronaldo|messi|ronaldinho|cristiano/i.test(lastMessage)) {
+  if (/sports|football|soccer|cricket|ronaldo|messi|ronaldinho|cristiano|football trophy|world cup/i.test(lastMessage)) {
     const sportsProducts = validProducts.filter(p => 
       /sports|football|soccer|cricket|ronaldo|messi/i.test((p.name + ' ' + p.category).toLowerCase())
     );
     if (sportsProducts.length > 0) {
-      return `Sports lover! Check out: ${sportsProducts.slice(0, 3).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which sport do you follow?`;
+      return `Sports lover! ⚽ Check out: ${sportsProducts.slice(0, 4).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Which sport do you follow?`;
     }
-    return "We have Ronaldo, Messi, and football trophy keychains! Browse our Sports category.";
+    return "We have Ronaldo, Messi, and football trophy keychains!";
   }
   
   // Price inquiry
-  if (/price|cost|kitna|kitna hai|rate|kita/i.test(lastMessage)) {
+  if (/price|cost|kitna|kitna hai|rate|kita|kitni|pice/i.test(lastMessage)) {
     if (validProducts.length > 0) {
       const prices = validProducts.map(p => p.price).filter(p => p > 0);
       if (prices.length > 0) {
-        return `Our keychains range from Rs ${Math.min(...prices)} to Rs ${Math.max(...prices)}. Most are between Rs 500-700. What category interests you?`;
+        return `Our keychains range from Rs ${Math.min(...prices)} to Rs ${Math.max(...prices)}. Most are between Rs 500-700. Great quality for the price! 💪`;
       }
     }
     return "Our keychains are priced between Rs 450-750. Great value for premium quality!";
   }
   
   // Shipping/delivery
-  if (/shipping|delivery|delivery time|kitne din|bhejna|deliver|charge/i.test(lastMessage)) {
-    return "Shipping is just Rs 250 anywhere in Pakistan! Delivery takes 5-7 working days. Cash on delivery available!";
+  if (/shipping|delivery|delivery time|kitne din|bhejna|deliver|charge|kaabon|arha|pahunch/i.test(lastMessage)) {
+    return "Shipping is just Rs 250 anywhere in Pakistan! 🚚 Delivery takes 5-7 working days. Cash on delivery available!";
   }
   
   // Stock/inventory
-  if (/stock|available|in stock|out of stock|hazir/i.test(lastMessage)) {
+  if (/stock|available|in stock|out of stock|hazir|h?|mana|maila/i.test(lastMessage)) {
     if (validProducts.length > 0) {
-      return `Yes! We have ${validProducts.length} products in stock. All items are ready to ship!`;
+      return `Yes! We have ${validProducts.length} products in stock. ✅ All items are ready to ship!`;
     }
     return "Most items are in stock! Browse our shop to see what's available.";
   }
   
   // Payment methods
-  if (/payment|pay|cash on delivery|cod|easypaisa|jazzcash|bank/i.test(lastMessage)) {
-    return "We accept Cash on Delivery (COD) - pay when you receive! Bank transfer, JazzCash and EasyPaisa also available.";
+  if (/payment|pay|cash on delivery|cod|easypaisa|jazzcash|bank|paisa|rupiya/i.test(lastMessage)) {
+    return "We accept Cash on Delivery (COD) 💵 - pay when you receive! Bank transfer, JazzCash and EasyPaisa also available.";
   }
   
   // Recommendation
-  if (/recommend|suggest|best|top|popular|acha|best choice|khush|recommendation/i.test(lastMessage)) {
+  if (/recommend|suggest|best|top|popular|acha|best choice|khush|recommendation|btiye|dikhao/i.test(lastMessage)) {
     if (validProducts.length > 0) {
       const topRated = validProducts.filter(p => p.rating && p.rating >= 4.5);
       if (topRated.length > 0) {
-        return `My top picks: ${topRated.slice(0, 3).map(p => `${p.name} (Rs ${p.price}) ⭐${p.rating}`).join(', ')}. Want more details?`;
+        return `My top picks: ⭐ ${topRated.slice(0, 4).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Want more details?`;
       }
-      return `Popular items: ${validProducts.slice(0, 3).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Interested?`;
+      return `Popular items: 🔥 ${validProducts.slice(0, 4).map(p => `${p.name} (Rs ${p.price})`).join(', ')}. Interested?`;
     }
     return "I'd recommend our anime and superhero collections! They are super popular. What style do you like?";
   }
   
   // Help
-  if (/help|assistance|kaise|how can i/i.test(lastMessage)) {
-    return "I can help you: Browse products by category, Check prices, Place orders, Shipping info, Payment methods. Just ask!";
+  if (/help|assistance|kaise|how can i|madad|guide/i.test(lastMessage)) {
+    return "I can help you: ✅ Browse products by category ✅ Check prices ✅ Place orders ✅ Shipping info ✅ Payment methods. Just ask!";
   }
   
-  // Product search - look for any matching text
-  if (validProducts.length > 0) {
-    const searchTerms = lastMessage.split(/\s+/).filter(w => w.length > 2);
-    const matchedProducts = validProducts.filter(p => {
-      const productText = (p.name + ' ' + p.category + ' ' + (p.description || '')).toLowerCase();
-      return searchTerms.some(term => productText.includes(term));
-    });
-    
-    if (matchedProducts.length > 0) {
-      return `Found ${matchedProducts.length} products: ${matchedProducts.slice(0, 4).map(p => `${p.name} - Rs ${p.price}`).join(', ')}. Which one interests you?`;
+  // Quantity/How many
+  if (/how many|kitne|quantity|kita|adad/i.test(lastMessage)) {
+    if (validProducts.length > 0) {
+      return `We have ${validProducts.length} different keychains available! Tell me which one you want.`;
     }
+    return "Just tell me which keychain you like and I'll help you order!";
   }
   
   // Catalog overview
   if (validProducts.length > 0) {
     const categories = [...new Set(validProducts.map(p => p.category).filter(Boolean))];
-    return `We've got ${validProducts.length} keychains! Categories: ${categories.slice(0, 5).join(', ')}. What style do you prefer?`;
+    return `We've got ${validProducts.length} awesome keychains! 🏆 Categories: ${categories.slice(0, 5).join(', ')}. What style do you prefer?`;
+  }
+  
+  // Yes/No responses
+  if (/^(yes|yeah|haan|ha|okay|ok|sure|yep)$/i.test(fullMessage.trim())) {
+    return "Great! 😊 Tell me which keychain you'd like to order!";
+  }
+  
+  if (/^(no|nope|nah|nahi|nai)$/i.test(fullMessage.trim())) {
+    return "No problem! Let me know if you need any help. 😊";
+  }
+  
+  // Catalog overview when no products
+  if (validProducts.length === 0) {
+    return "Welcome to HEROIX! 🔥 We sell Anime, Superhero, Marvel, DC & Sports keychains. Browse our shop to see what's available!";
   }
   
   // Default response
-  return "I'm HEROIX, your shopping assistant! Browse our keychains by category or just tell me what you're looking for - anime, superhero, sports?";
+  return "I'm HEROIX, your shopping assistant! 🤖 Just tell me what you're looking for - anime, superhero, sports? I can help you find the perfect keychain!";
 }
