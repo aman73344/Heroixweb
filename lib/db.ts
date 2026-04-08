@@ -235,9 +235,7 @@ export async function getOrders(): Promise<Order[]> {
 
 export async function addOrderToSupabase(order: Order): Promise<boolean> {
   try {
-    console.log('Attempting to save order:', JSON.stringify(order, null, 2));
-    
-    const { data, error, status } = await supabase
+    const { data, error } = await supabase
       .from('orders')
       .insert([{
         id: order.id,
@@ -257,20 +255,13 @@ export async function addOrderToSupabase(order: Order): Promise<boolean> {
       .single();
 
     if (error) {
-      console.error('Supabase order insert error:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-        status
-      });
+      console.error('Supabase order insert error:', error.message, error.code, error.status);
       return false;
     }
     
-    console.log('Order saved successfully:', data);
     return true;
-  } catch (error) {
-    console.error('Error adding order:', error);
+  } catch (error: any) {
+    console.error('Error adding order:', error.message);
     return false;
   }
 }

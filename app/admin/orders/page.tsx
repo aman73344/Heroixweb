@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label';
 import { RefreshCw, Trash2, Edit2, Check, X } from 'lucide-react';
 
 interface OrderItem {
-  product: string;
+  product?: string;
+  name?: string;
   productId: string;
   quantity: number;
   price: number;
@@ -113,7 +114,7 @@ export default function OrdersPage() {
 
   const formatItems = (items_data?: OrderItem[]) => {
     if (!items_data || items_data.length === 0) return 'N/A';
-    return items_data.map(i => `${i.quantity}x ${i.product}`).join(', ');
+    return items_data.map(i => `${i.quantity}x ${i.product || i.name || 'Unknown'}`).join(', ');
   };
 
   return (
@@ -201,8 +202,8 @@ export default function OrdersPage() {
                     <td className="px-4 py-3 text-sm">{order.date}</td>
                     <td className="px-4 py-3">
                       <div>
-                        <p className="font-medium">{order.customer}</p>
-                        <p className="text-xs text-muted-foreground">{order.city}</p>
+                        <p className="font-medium">{order.customer || 'N/A'}</p>
+                        <p className="text-xs text-muted-foreground">{order.city || 'N/A'}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">

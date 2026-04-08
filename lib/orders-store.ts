@@ -37,11 +37,13 @@ export async function getOrders(): Promise<AdminOrder[]> {
 }
 
 export async function addOrder(order: AdminOrder): Promise<boolean> {
-  const success = await addOrderToSupabase(order);
-  if (!success) {
-    console.error('Failed to save order to database');
+  try {
+    await addOrderToSupabase(order);
+    return true;
+  } catch (error: any) {
+    console.error('Failed to save order to database:', error.message);
+    return false;
   }
-  return success;
 }
 
 export async function updateOrder(orderId: string, updates: Partial<AdminOrder>): Promise<AdminOrder | null> {

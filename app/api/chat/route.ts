@@ -53,8 +53,9 @@ const FALLBACK_PRODUCTS = [
 async function getProductContext(): Promise<any[]> {
   try {
     const products = await getServerProducts();
+    console.log('Products from Supabase:', products?.length || 0);
     if (products && products.length > 0) {
-      return products.map(p => ({
+      const mapped = products.map(p => ({
         id: p.id || p.name,
         name: p.name,
         category: p.category,
@@ -62,9 +63,12 @@ async function getProductContext(): Promise<any[]> {
         description: p.description || p.name,
         rating: p.rating || 4.5
       }));
+      console.log('Mapped products sample:', mapped.slice(0, 2));
+      return mapped;
     }
-  } catch (error) {
-    console.warn('Failed to get products from Supabase, using fallback');
+    console.log('No products from Supabase, using fallback');
+  } catch (error: any) {
+    console.error('Failed to get products from Supabase:', error.message);
   }
   return FALLBACK_PRODUCTS;
 }
@@ -83,16 +87,25 @@ function findProductsInMessage(
   const lower = userMessage.toLowerCase();
   const found: Array<{id: string; name: string; price: number}> = [];
   
+  // Filter out invalid products
+  const validProducts = products.filter(p => p && p.name && typeof p.name === 'string');
+  
+  console.log('Valid products count:', validProducts.length);
+  
   // Sort products by name length (longer names first) to match more specific products first
-  const sortedProducts = [...products].sort((a, b) => b.name.length - a.name.length);
+  const sortedProducts = [...validProducts].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
   
   for (const product of sortedProducts) {
+    if (!product.name) continue;
+    
     const nameLower = product.name.toLowerCase();
     
     // Check for exact match (product name appears in message)
     if (lower.includes(nameLower)) {
       if (!found.find(p => p.id === product.id)) {
-        found.push({ id: product.id, name: product.name, price: product.price });
+        const newProduct = { id: product.id, name: product.name, price: product.price || 0 };
+        console.log('Matched product:', newProduct);
+        found.push(newProduct);
       }
       continue;
     }
@@ -109,18 +122,16 @@ function findProductsInMessage(
       return wordPattern.test(lower);
     });
     
-    // Also check if the product name itself (as a phrase) is close to what's in message
-    // by checking if the first significant word appears with other words from the name
-    const firstWord = nameWords[0] || '';
-    const hasFirstWord = firstWord ? new RegExp(`\\b${escapeRegExp(firstWord)}\\b`, 'i').test(lower) : false;
-    
     if (allWordsMatch && nameWords.length > 0) {
       if (!found.find(p => p.id === product.id)) {
-        found.push({ id: product.id, name: product.name, price: product.price });
+        const newProduct = { id: product.id, name: product.name, price: product.price || 0 };
+        console.log('Matched product (all words):', newProduct);
+        found.push(newProduct);
       }
     }
   }
   
+  console.log('Found products:', found);
   return found;
 }
 
@@ -215,7 +226,7 @@ function extractQuantitiesForProducts(
   return quantities;
 }
 
-function extractName(lower: string, trimmed: string, currentStep?: string): string | undefined {
+  function extractName(lower: string, trimmed: string, currentStep?: string): string | undefined {
   if (currentStep === 'name') {
     const explicitMatch = trimmed.match(/(?:name|naam|mera naam|my name is)\s*[:\-]?\s*(.+)/i);
     if (explicitMatch) {
@@ -225,7 +236,7 @@ function extractName(lower: string, trimmed: string, currentStep?: string): stri
     const validWords = words.filter(w => 
       w.length >= 2 && 
       /^[a-zA-Z]+$/.test(w) &&
-      !['order', 'want', 'need', 'please', 'thanks', 'thank'].includes(w.toLowerCase())
+      !['order', 'want', 'need', 'please', 'thanks', 'thank', 'yes', 'no', 'confirm'].includes(w.toLowerCase())
     );
     if (validWords.length > 0) {
       return validWords.join(' ');
@@ -285,12 +296,12 @@ function formatOrderSummary(
   for (const item of orderState.items) {
     const itemTotal = item.price * item.quantity;
     subtotal += itemTotal;
-    itemsText += `• ${item.product} x${item.quantity} = Rs ${itemTotal}\n`;
+    itemsText += `• ${item.product || 'Unknown Product'} x${item.quantity} = Rs ${itemTotal}\n`;
   }
   
   const total = subtotal + shipping;
   
-  const text = `📋 Order Summary:\n\n${itemsText}• Shipping = Rs ${shipping}\n• Total = Rs ${total}\n\n📍 Delivery to:\n${orderState.name}\n${orderState.city}\n${orderState.address}\n📱 Phone: ${orderState.phone}\n\nReply "yes" to confirm or "cancel" to start over.`;
+  const text = `📋 Order Summary:\n\n${itemsText}• Shipping = Rs ${shipping}\n• Total = Rs ${total}\n\n📍 Delivery to:\n${orderState.name || 'N/A'}\n${orderState.city || 'N/A'}\n${orderState.address || 'N/A'}\n📱 Phone: ${orderState.phone || 'N/A'}\n\nReply "yes" to confirm or "cancel" to start over.`;
   
   return { text, subtotal, total };
 }
@@ -322,22 +333,58 @@ async function handleOrderFlow(
     const shipping = 250;
     const total = subtotal + shipping;
     
-    const itemsList = orderState.items.map(i => `${i.product} x${i.quantity}`).join(', ');
+    const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown Product'}`).join(', ');
     
     const orders = await getOrders();
+    const existingIds = new Set(orders.map(o => o.id));
+    let orderId = `ORD-${Date.now().toString().slice(-6)}`;
+    
+    let counter = 0;
+    while (existingIds.has(orderId)) {
+      counter++;
+      orderId = `ORD-${Date.now().toString().slice(-6)}${counter}`;
+    }
+    
+    if (!orderState.name || orderState.name === 'Unknown') {
+      sessionState.orderStep = 'name';
+      return `I need your name to place the order. What's your name please?`;
+    }
+    
+    if (!orderState.phone) {
+      sessionState.orderStep = 'phone';
+      return `Thanks ${orderState.name}! What's your phone number?`;
+    }
+    
+    if (!orderState.city) {
+      sessionState.orderStep = 'city';
+      return `Which city should we deliver to?`;
+    }
+    
+    if (!orderState.address) {
+      sessionState.orderStep = 'address';
+      return `What's your full delivery address?`;
+    }
+    
     const newOrder: AdminOrder = {
-      id: `ORD-${String(orders.length + 1).padStart(3, '0')}`,
+      id: orderId,
       date: new Date().toISOString().split('T')[0],
-      customer: orderState.name || 'Unknown',
+      customer: orderState.name,
       email: '',
-      phone: orderState.phone || '',
-      address: orderState.address || '',
-      city: orderState.city || '',
+      phone: orderState.phone,
+      address: orderState.address,
+      city: orderState.city,
       items: totalItems,
       total: total,
       status: 'pending',
-      items_data: orderState.items,
+      items_data: orderState.items.map(item => ({
+        product: item.product || 'Unknown',
+        productId: item.productId || 'unknown',
+        quantity: item.quantity,
+        price: item.price || 0
+      })),
     };
+    
+    console.log('Saving order:', JSON.stringify(newOrder, null, 2));
     
     const saved = await addOrder(newOrder);
     
@@ -426,14 +473,18 @@ async function handleOrderFlow(
         // Update existing item
         if (qty > 0) orderState.items[existingIndex].quantity = qty;
       } else {
-        orderState.items.push({
-          product: found.name,
-          productId: found.id,
-          price: found.price,
+        const newItem = {
+          product: found.name || 'Unknown Product',
+          productId: found.id || `prod_${Date.now()}`,
+          price: found.price || 0,
           quantity: qty // 0 = needs confirmation
-        });
+        };
+        console.log('Adding item to order:', newItem);
+        orderState.items.push(newItem);
       }
     }
+    
+    console.log('Current order items:', orderState.items);
     
     // Count how many items need quantity confirmation
     const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
@@ -634,6 +685,7 @@ export async function POST(request: NextRequest) {
     }
     
     const products = await getProductContext();
+    console.log('Products loaded:', products.length);
     
     const lastUserMsg = userMessage.content.toLowerCase();
     const isOrderIntent = lastUserMsg.includes('order') || lastUserMsg.includes('buy') || 
@@ -651,6 +703,8 @@ export async function POST(request: NextRequest) {
     } else {
       response = await generateLLMResponse(conversationHistory, products);
     }
+    
+    console.log('Chat response generated, length:', response.length);
     
     if (sessionState.lastAssistantMessage === response) {
       response += " Anything else I can help with?";

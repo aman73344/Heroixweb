@@ -9,7 +9,8 @@ interface OrderRequest {
   city?: string;
   items: {
     productId: string;
-    name: string;
+    product?: string;
+    name?: string;
     price: number;
     quantity: number;
   }[];
@@ -52,32 +53,53 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as OrderRequest;
 
-    // Validate required fields
     if (!body.customer || !body.email || !body.items || body.items.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields' },
+        { success: false, error: `Missing required fields: customer=${body.customer}, email=${body.email}, items=${body.items?.length}` },
         { status: 400 }
       );
     }
+    
+    const customerName = String(body.customer).trim() || 'Guest';
+    const customerEmail = String(body.email).trim();
 
     const orders = await getOrders();
-    const orderId = `ORD-${String(orders.length + 1).padStart(3, '0')}`;
+    const existingIds = new Set(orders.map(o => o.id));
+    let orderId = `ORD-${Date.now().toString().slice(-6)}`;
+    
+    let counter = 0;
+    while (existingIds.has(orderId)) {
+      counter++;
+      orderId = `ORD-${Date.now().toString().slice(-6)}${counter}`;
+    }
 
     const newOrder: AdminOrder = {
       id: orderId,
       date: new Date().toISOString().split('T')[0],
-      customer: body.customer,
-      email: body.email,
+      customer: customerName,
+      email: customerEmail,
       phone: body.phone || '',
       address: body.address || '',
       city: body.city || '',
       items: body.items.length,
       total: body.total,
       status: 'pending',
-      items_data: body.items,
+      items_data: body.items.map(item => ({
+        product: item.product || item.name || 'Unknown',
+        productId: item.productId,
+        price: item.price,
+        quantity: item.quantity,
+      })),
     };
 
-    await addOrder(newOrder);
+    const saved = await addOrder(newOrder);
+
+    if (!saved) {
+      return NextResponse.json(
+        { success: false, error: 'Database error: RLS policy or connection issue' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json(
       {
@@ -87,10 +109,10 @@ export async function POST(request: NextRequest) {
       },
       { status: 201 }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error('Orders API POST error:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to create order' },
+      { success: false, error: `Server error: ${error.message}` },
       { status: 500 }
     );
   }

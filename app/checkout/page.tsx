@@ -46,7 +46,7 @@ export default function CheckoutPage() {
           city: formData.city,
           items: items.map(item => ({
             productId: item.productId,
-            name: item.name,
+            product: item.name,
             price: item.price,
             quantity: item.quantity,
           })),

@@ -72,6 +72,8 @@ export async function generateLLMResponse(
 ): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   
+  console.log('OpenRouter API key available:', !!apiKey, apiKey ? `prefix: ${apiKey.substring(0, 15)}...` : 'none');
+  
   // If no API key, always use fallback
   if (!apiKey) {
     console.warn('OpenRouter API key not configured, using enhanced fallback');
