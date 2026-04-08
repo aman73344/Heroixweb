@@ -94,7 +94,7 @@ export async function generateLLMResponse(
           'X-Title': 'HEROIX AI Assistant',
         },
         body: JSON.stringify({
-          model: 'anthropic/claude-3-haiku',
+          model: 'google/gemini-2.0-flash-001',
           messages: [
             { role: 'system', content: systemPrompt },
             ...messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
