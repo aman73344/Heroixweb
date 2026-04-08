@@ -37,11 +37,14 @@ const FALLBACK_PRODUCTS = [
   { id: 'jujutsu-kaisen', name: 'Jujutsu Kaisen', category: 'Anime', price: 599, rating: 4.8 },
   { id: 'naruto', name: 'Naruto', category: 'Anime', price: 549, rating: 4.7 },
   { id: 'one-piece', name: 'One Piece', category: 'Anime', price: 699, rating: 4.9 },
+  { id: 'dragon-ball', name: 'Dragon Ball Z Goku', category: 'Anime', price: 599, rating: 4.8 },
   { id: 'batman', name: 'Batman Icon', category: 'Superhero', price: 599, rating: 4.8 },
+  { id: 'batman-batarang', name: 'Batman Batarang', category: 'Superhero', price: 550, rating: 4.7 },
   { id: 'superman', name: 'Superman Shield', category: 'Superhero', price: 599, rating: 4.7 },
   { id: 'wonder-woman', name: 'Wonder Woman Lasso', category: 'Superhero', price: 649, rating: 4.9 },
   { id: 'iron-man', name: 'Iron Man Arc Reactor', category: 'Marvel', price: 699, rating: 4.9 },
   { id: 'spider-man', name: 'Spider-Man Web', category: 'Marvel', price: 549, rating: 4.8 },
+  { id: 'spiderman-spinning', name: 'Spider-Man Spinning', category: 'Marvel', price: 500, rating: 4.6 },
   { id: 'thor-hammer', name: 'Thor Mjolnir', category: 'Marvel', price: 749, rating: 4.9 },
   { id: 'flash', name: 'The Flash Lightning', category: 'DC', price: 549, rating: 4.7 },
   { id: 'aquaman', name: 'Aquaman Trident', category: 'DC', price: 599, rating: 4.6 },
@@ -53,9 +56,8 @@ const FALLBACK_PRODUCTS = [
 async function getProductContext(): Promise<any[]> {
   try {
     const products = await getServerProducts();
-    console.log('Products from Supabase:', products?.length || 0);
     if (products && products.length > 0) {
-      const mapped = products.map(p => ({
+      return products.map(p => ({
         id: p.id || p.name,
         name: p.name,
         category: p.category,
@@ -63,12 +65,9 @@ async function getProductContext(): Promise<any[]> {
         description: p.description || p.name,
         rating: p.rating || 4.5
       }));
-      console.log('Mapped products sample:', mapped.slice(0, 2));
-      return mapped;
     }
-    console.log('No products from Supabase, using fallback');
-  } catch (error: any) {
-    console.error('Failed to get products from Supabase:', error.message);
+  } catch (error) {
+    console.warn('Using fallback products');
   }
   return FALLBACK_PRODUCTS;
 }
@@ -87,56 +86,56 @@ function findProductsInMessage(
   const lower = userMessage.toLowerCase();
   const found: Array<{id: string; name: string; price: number}> = [];
   
-  // Filter out invalid products
   const validProducts = products.filter(p => p && p.name && typeof p.name === 'string');
-  
-  console.log('Valid products count:', validProducts.length);
-  
-  // Sort products by name length (longer names first) to match more specific products first
   const sortedProducts = [...validProducts].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
+  
+  const aliases: Record<string, string[]> = {
+    'goku': ['goku', 'dragon ball', 'dbz'],
+    'vegeta': ['vegeta', 'dragon ball', 'dbz'],
+    'naruto': ['naruto', 'uzumaki'],
+    'luffy': ['luffy', 'one piece'],
+    'spiderman': ['spider-man', 'spiderman', 'spidey'],
+    'batman': ['batman', 'bat'],
+    'ironman': ['iron man', 'ironman'],
+    'thor': ['thor', 'mjolnir'],
+    'superman': ['superman'],
+  };
   
   for (const product of sortedProducts) {
     if (!product.name) continue;
     
     const nameLower = product.name.toLowerCase();
+    let matched = false;
     
-    // Check for exact match (product name appears in message)
     if (lower.includes(nameLower)) {
-      if (!found.find(p => p.id === product.id)) {
-        const newProduct = { id: product.id, name: product.name, price: product.price || 0 };
-        console.log('Matched product:', newProduct);
-        found.push(newProduct);
-      }
-      continue;
+      matched = true;
     }
     
-    // Check if ALL significant words (length > 2) from the product name appear in the message
-    // This prevents matching "Batman Logo" when user says "Batman Batarang"
-    const nameWords = nameLower.split(/\s+/).filter((w: string) => w.length > 2);
-    
-    // For exact matching: ALL words must appear in the message
-    // This ensures "Batman Batarang" doesn't match when user says "Batman" alone
-    const allWordsMatch = nameWords.every((word: string) => {
-      // Use word boundary to match whole words only
-      const wordPattern = new RegExp(`\\b${escapeRegExp(word)}\\b`, 'i');
-      return wordPattern.test(lower);
-    });
-    
-    if (allWordsMatch && nameWords.length > 0) {
-      if (!found.find(p => p.id === product.id)) {
-        const newProduct = { id: product.id, name: product.name, price: product.price || 0 };
-        console.log('Matched product (all words):', newProduct);
-        found.push(newProduct);
+    if (!matched && nameLower.length > 3) {
+      const words = nameLower.split(/\s+/);
+      const matchingWords = words.filter((w: string) => w.length > 3 && lower.includes(w));
+      if (matchingWords.length >= Math.ceil(words.length / 2)) {
+        matched = true;
       }
+    }
+    
+    if (!matched) {
+      for (const [alias, variations] of Object.entries(aliases)) {
+        const messageHasAlias = variations.some((v: string) => lower.includes(v));
+        const productHasAlias = variations.some((v: string) => nameLower.includes(v));
+        if (messageHasAlias && productHasAlias) {
+          matched = true;
+          break;
+        }
+      }
+    }
+    
+    if (matched && !found.find(p => p.id === product.id)) {
+      found.push({ id: product.id, name: product.name, price: product.price || 0 });
     }
   }
   
-  console.log('Found products:', found);
   return found;
-}
-
-function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function extractQuantitiesForProducts(
@@ -146,49 +145,12 @@ function extractQuantitiesForProducts(
   const quantities = new Map<string, number>();
   const lower = userMessage.toLowerCase();
   
-  // First pass: look for explicit quantity patterns for ALL products at once
-  const allAtOncePatterns = [
-    // "3 spiderman and 5 ironman" or "spiderman 3 and ironman 5"
-    /^.*?(\d+)\s+(?:x|×)?\s*(\w+).*?(\d+)\s+(?:x|×)?\s*(\w+).*$/i,
-    // "3 spiderman, 5 ironman"
-    /^.*?(\d+)\s+(\w+).*?,?\s*(\d+)\s+(\w+).*$/i,
-  ];
-  
-  for (const pattern of allAtOncePatterns) {
-    const match = userMessage.match(pattern);
-    if (match) {
-      // Try to extract both quantities
-      for (const name of productNames) {
-        const nameLower = name.toLowerCase();
-        for (let i = 1; i < match.length - 1; i++) {
-          const qtyOrName = match[i];
-          const nextVal = match[i + 1];
-          if (nextVal && !isNaN(parseInt(nextVal))) {
-            const qty = parseInt(nextVal);
-            const possibleName = match[i + 2] || match[i];
-            if (possibleName && possibleName.toLowerCase().includes(name.split(' ')[0].toLowerCase())) {
-              if (qty > 0 && qty <= 100) {
-                quantities.set(name, qty);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  // Second pass: look for explicit quantity patterns per product
   for (const name of productNames) {
     const nameLower = name.toLowerCase();
     const patterns = [
-      // "3 Batman" or "3x Batman"
       new RegExp(`(\\d+)\\s+(?:x|×)?\\s*(${nameLower})`, 'i'),
-      // "Batman 3"
       new RegExp(`(${nameLower})\\s*(?:x|×)?\\s*(\\d+)`, 'i'),
-      // "3 pieces of Batman"
-      new RegExp(`(${nameLower}).*?(\\d+)\\s*(?:pieces?|keychains?|pcs?)`, 'i'),
-      // "Batman x3"
-      new RegExp(`(${nameLower})\\s*x\\s*(\\d+)`, 'i'),
+      new RegExp(`(${nameLower}).*?(\\d+)\\s*(?:pieces?|pcs?)`, 'i'),
     ];
     
     for (const pattern of patterns) {
@@ -203,37 +165,17 @@ function extractQuantitiesForProducts(
     }
   }
   
-  // Third pass: if no explicit quantities found, check for common phrases
-  if (quantities.size === 0) {
-    const numberWords: Record<string, number> = {
-      'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10
-    };
-    
-    for (const name of productNames) {
-      const nameLower = name.toLowerCase();
-      for (const [word, num] of Object.entries(numberWords)) {
-        const pattern = new RegExp(`(${word})\\s+(${nameLower})`, 'i');
-        if (pattern.test(lower)) {
-          quantities.set(name, num);
-          break;
-        }
-      }
-    }
-  }
-  
-  // Fourth pass: if still no quantities found, return empty map to trigger quantity questions
   return quantities;
 }
 
-  function extractName(lower: string, trimmed: string, currentStep?: string): string | undefined {
+function extractName(lower: string, trimmed: string, currentStep?: string): string | undefined {
   if (currentStep === 'name') {
     const explicitMatch = trimmed.match(/(?:name|naam|mera naam|my name is)\s*[:\-]?\s*(.+)/i);
     if (explicitMatch) {
       return explicitMatch[1].trim().split(/\s+/).slice(0, 3).join(' ');
     }
     const words = trimmed.split(/\s+/).slice(0, 3);
-    const validWords = words.filter(w => 
+    const validWords = words.filter((w: string) => 
       w.length >= 2 && 
       /^[a-zA-Z]+$/.test(w) &&
       !['order', 'want', 'need', 'please', 'thanks', 'thank', 'yes', 'no', 'confirm'].includes(w.toLowerCase())
@@ -296,7 +238,7 @@ function formatOrderSummary(
   for (const item of orderState.items) {
     const itemTotal = item.price * item.quantity;
     subtotal += itemTotal;
-    itemsText += `• ${item.product || 'Unknown Product'} x${item.quantity} = Rs ${itemTotal}\n`;
+    itemsText += `• ${item.product || 'Unknown'} x${item.quantity} = Rs ${itemTotal}\n`;
   }
   
   const total = subtotal + shipping;
@@ -333,17 +275,7 @@ async function handleOrderFlow(
     const shipping = 250;
     const total = subtotal + shipping;
     
-    const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown Product'}`).join(', ');
-    
-    const orders = await getOrders();
-    const existingIds = new Set(orders.map(o => o.id));
-    let orderId = `ORD-${Date.now().toString().slice(-6)}`;
-    
-    let counter = 0;
-    while (existingIds.has(orderId)) {
-      counter++;
-      orderId = `ORD-${Date.now().toString().slice(-6)}${counter}`;
-    }
+    const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown'}`).join(', ');
     
     if (!orderState.name || orderState.name === 'Unknown') {
       sessionState.orderStep = 'name';
@@ -365,6 +297,16 @@ async function handleOrderFlow(
       return `What's your full delivery address?`;
     }
     
+    const orders = await getOrders();
+    const existingIds = new Set(orders.map(o => o.id));
+    let orderId = `ORD-${Date.now().toString().slice(-6)}`;
+    
+    let counter = 0;
+    while (existingIds.has(orderId)) {
+      counter++;
+      orderId = `ORD-${Date.now().toString().slice(-6)}${counter}`;
+    }
+    
     const newOrder: AdminOrder = {
       id: orderId,
       date: new Date().toISOString().split('T')[0],
@@ -384,8 +326,6 @@ async function handleOrderFlow(
       })),
     };
     
-    console.log('Saving order:', JSON.stringify(newOrder, null, 2));
-    
     const saved = await addOrder(newOrder);
     
     if (!saved) {
@@ -395,137 +335,58 @@ async function handleOrderFlow(
     return `🎉 Order confirmed!\n\n📦 Order: ${itemsList}\n💰 Total: Rs ${total}\n📍 Delivery to: ${orderState.city}\n\n🆔 Order ID: ${newOrder.id}\n\nYou'll receive a confirmation call shortly. Thanks for shopping with HEROIX!`;
   }
   
-  // Handle quantity step for individual items
-  if (sessionState.orderStep?.startsWith('qty_')) {
-    const productName = sessionState.orderStep.replace('qty_', '');
-    const item = orderState.items.find(i => i.product.toLowerCase().includes(productName));
-    
-    if (item) {
-      const qtyMatch = trimmed.match(/\d+/);
-      if (qtyMatch) {
-        const qty = parseInt(qtyMatch[0]);
-        if (qty > 0 && qty <= 100) {
-          item.quantity = qty;
-          
-          // Check if there are more items needing quantity (where quantity is still 0)
-          const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
-          
-          if (itemsNeedingQty.length > 0) {
-            const nextItem = itemsNeedingQty[0];
-            sessionState.orderStep = `qty_${nextItem.product.split(' ')[0].toLowerCase()}`;
-            
-            // Show what we have so far
-            const itemsWithQty = orderState.items.filter(i => i.quantity > 0);
-            const soFar = itemsWithQty.map(i => `${i.quantity}x ${i.product}`).join(', ');
-            
-            return `Got it! ${qty}x ${item.product}. Now how many ${nextItem.product}?`;
-          }
-          
-          // All quantities set, move to name
-          sessionState.orderStep = 'name';
-          const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product}`).join(', ');
-          return `Perfect! Your order: ${itemsList}. What's your name?`;
-        }
-      }
-      if (/one|single/i.test(trimmed)) {
-        item.quantity = 1;
-        const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
-        
-        if (itemsNeedingQty.length > 0) {
-          const nextItem = itemsNeedingQty[0];
-          sessionState.orderStep = `qty_${nextItem.product.split(' ')[0].toLowerCase()}`;
-          return `Got it! 1x ${item.product}. Now how many ${nextItem.product}?`;
-        }
-        
-        sessionState.orderStep = 'name';
-        const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product}`).join(', ');
-        return `Perfect! Your order: ${itemsList}. What's your name?`;
-      }
-      return `Please tell me how many ${item.product} you need (e.g., 1, 2, 3...)`;
-    }
-  }
-  
   const foundProducts = findProductsInMessage(userMessage, products);
   if (foundProducts.length > 0) {
     const quantities = extractQuantitiesForProducts(userMessage, foundProducts.map(p => p.name));
     
-    // Check if ANY products have explicit quantities specified (greater than 1)
-    let anyExplicitQty = false;
-    for (const found of foundProducts) {
-      const qty = quantities.get(found.name);
-      if (qty && qty > 1) {
-        anyExplicitQty = true;
-        break;
-      }
-    }
-    
-    // First, clear items with quantity=0 and add fresh ones
-    // Remove items that don't have confirmed quantities yet
     const confirmedItems = orderState.items.filter(i => i.quantity > 0);
     orderState.items = [...confirmedItems];
     
-    // Add new products with quantity=0 (not yet confirmed)
     for (const found of foundProducts) {
       const existingIndex = orderState.items.findIndex(i => i.productId === found.id);
-      const qty = quantities.get(found.name) || 0; // 0 means needs confirmation
+      const qty = quantities.get(found.name) || 0;
       
       if (existingIndex >= 0) {
-        // Update existing item
         if (qty > 0) orderState.items[existingIndex].quantity = qty;
       } else {
-        const newItem = {
+        orderState.items.push({
           product: found.name || 'Unknown Product',
           productId: found.id || `prod_${Date.now()}`,
           price: found.price || 0,
-          quantity: qty // 0 = needs confirmation
-        };
-        console.log('Adding item to order:', newItem);
-        orderState.items.push(newItem);
+          quantity: qty
+        });
       }
     }
     
-    console.log('Current order items:', orderState.items);
-    
-    // Count how many items need quantity confirmation
     const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
     
     if (itemsNeedingQty.length > 0) {
       if (itemsNeedingQty.length === 1) {
-        // Only one item needs quantity
         const currentItem = itemsNeedingQty[0];
         sessionState.orderStep = `qty_${currentItem.product.split(' ')[0].toLowerCase()}`;
         return `Got it! You want ${currentItem.product}. How many do you need?`;
       }
       
-      // Multiple items - ask for quantities for all at once
       sessionState.orderStep = 'qty_all';
       const itemList = itemsNeedingQty.map((item, idx) => `${idx + 1}. ${item.product}`).join(', ');
-      return `I found ${itemsNeedingQty.length} keychains: ${itemList}. Please tell me the quantity for each (e.g., "3 for spiderman and 5 for ironman" or just "3, 5"):`;
+      return `I found ${itemsNeedingQty.length} keychains: ${itemList}. Please tell me the quantity for each (e.g., "3 for spiderman and 5 for ironman"):`;
     }
     
-    // All items have quantity, move to name
     sessionState.orderStep = 'name';
-    const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product}`).join(', ');
+    const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown'}`).join(', ');
     return `Perfect! Your order: ${itemsList}. What's your name?`;
   }
   
-  // Handle "qty_all" step - multiple items need quantities at once
   if (sessionState.orderStep === 'qty_all') {
     const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
     if (itemsNeedingQty.length > 0) {
-      // Try to extract quantities from the message
-      const lower = userMessage.toLowerCase();
       let allHaveQty = true;
       
       for (const item of itemsNeedingQty) {
-        const itemLower = item.product.toLowerCase();
         const firstWord = item.product.split(' ')[0].toLowerCase();
-        
-        // Look for pattern like "3 for spiderman" or "spiderman: 3" or just "3"
         const patterns = [
           new RegExp(`(\\d+)\\s+(?:x|×)?\\s*(?:for|of)?\\s*${firstWord}`, 'i'),
           new RegExp(`${firstWord}.*?:\\s*(\\d+)`, 'i'),
-          new RegExp(`(${itemLower}).*?(\\d+)`, 'i'),
         ];
         
         let foundQty = 0;
@@ -537,7 +398,6 @@ async function handleOrderFlow(
           }
         }
         
-        // If no pattern matched, try to find standalone numbers
         if (foundQty === 0) {
           const numbers = trimmed.match(/\d+/g);
           if (numbers && numbers.length >= itemsNeedingQty.length) {
@@ -555,11 +415,10 @@ async function handleOrderFlow(
       
       if (allHaveQty) {
         sessionState.orderStep = 'name';
-        const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product}`).join(', ');
+        const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown'}`).join(', ');
         return `Perfect! Your order: ${itemsList}. What's your name?`;
       }
       
-      // Still missing quantities, ask again
       const remainingItems = itemsNeedingQty.filter(i => i.quantity === 0);
       if (remainingItems.length === 1) {
         sessionState.orderStep = `qty_${remainingItems[0].product.split(' ')[0].toLowerCase()}`;
@@ -571,7 +430,52 @@ async function handleOrderFlow(
     }
   }
   
-  // Extract customer details
+  if (sessionState.orderStep?.startsWith('qty_')) {
+    const productName = sessionState.orderStep.replace('qty_', '');
+    const item = orderState.items.find(i => i.product.toLowerCase().includes(productName));
+    
+    if (item) {
+      const qtyMatch = trimmed.match(/\d+/);
+      if (qtyMatch) {
+        const qty = parseInt(qtyMatch[0]);
+        if (qty > 0 && qty <= 100) {
+          item.quantity = qty;
+          
+          const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
+          
+          if (itemsNeedingQty.length > 0) {
+            const nextItem = itemsNeedingQty[0];
+            sessionState.orderStep = `qty_${nextItem.product.split(' ')[0].toLowerCase()}`;
+            
+            const itemsWithQty = orderState.items.filter(i => i.quantity > 0);
+            const soFar = itemsWithQty.map(i => `${i.quantity}x ${i.product}`).join(', ');
+            
+            return `Got it! ${qty}x ${item.product}. Now how many ${nextItem.product}?`;
+          }
+          
+          sessionState.orderStep = 'name';
+          const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown'}`).join(', ');
+          return `Perfect! Your order: ${itemsList}. What's your name?`;
+        }
+      }
+      if (/one|single/i.test(trimmed)) {
+        item.quantity = 1;
+        const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
+        
+        if (itemsNeedingQty.length > 0) {
+          const nextItem = itemsNeedingQty[0];
+          sessionState.orderStep = `qty_${nextItem.product.split(' ')[0].toLowerCase()}`;
+          return `Got it! 1x ${item.product}. Now how many ${nextItem.product}?`;
+        }
+        
+        sessionState.orderStep = 'name';
+        const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown'}`).join(', ');
+        return `Perfect! Your order: ${itemsList}. What's your name?`;
+      }
+      return `Please tell me how many ${item.product} you need (e.g., 1, 2, 3...)`;
+    }
+  }
+  
   const extractedName = extractName(lower, trimmed, sessionState.orderStep);
   if (extractedName) {
     orderState.name = extractedName.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
@@ -592,12 +496,10 @@ async function handleOrderFlow(
     orderState.address = extractedAddress;
   }
   
-  // If we're at the phone step and user provides a number
   if (sessionState.orderStep === 'phone' && !orderState.phone && trimmed.match(/\d{10,}/)) {
     orderState.phone = trimmed.replace(/\D/g, '');
   }
   
-  // If we're at the city step
   if (sessionState.orderStep === 'city' && !orderState.city) {
     if (/^[a-zA-Z\s]{3,20}$/.test(trimmed)) {
       const cities = ['lahore', 'karachi', 'islamabad', 'peshawar', 'quetta', 'multan', 'faisalabad', 'rawalpindi'];
@@ -608,20 +510,17 @@ async function handleOrderFlow(
     }
   }
   
-  // If we're at the address step
   if (sessionState.orderStep === 'address' && !orderState.address) {
     if (trimmed.split(/\s+/).length >= 2 || trimmed.length > 15) {
       orderState.address = trimmed;
     }
   }
   
-  // State machine for order flow
   if (orderState.items.length === 0) {
     sessionState.orderStep = 'product';
     return "Sure! Which keychain(s) would you like to order? You can say things like:\n- 'Batman'\n- 'Batman and Iron Man'\n- '3 Spider-Man'";
   }
   
-  // Check if we still need quantities for some items
   const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
   if (itemsNeedingQty.length > 0 && !sessionState.orderStep?.startsWith('qty_')) {
     const currentItem = itemsNeedingQty[0];
@@ -634,7 +533,7 @@ async function handleOrderFlow(
   
   if (!orderState.name) {
     sessionState.orderStep = 'name';
-    const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product}`).join(', ');
+    const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown'}`).join(', ');
     return `Perfect! Your order: ${itemsList}. What's your name?`;
   }
   
@@ -685,7 +584,6 @@ export async function POST(request: NextRequest) {
     }
     
     const products = await getProductContext();
-    console.log('Products loaded:', products.length);
     
     const lastUserMsg = userMessage.content.toLowerCase();
     const isOrderIntent = lastUserMsg.includes('order') || lastUserMsg.includes('buy') || 
@@ -703,8 +601,6 @@ export async function POST(request: NextRequest) {
     } else {
       response = await generateLLMResponse(conversationHistory, products);
     }
-    
-    console.log('Chat response generated, length:', response.length);
     
     if (sessionState.lastAssistantMessage === response) {
       response += " Anything else I can help with?";

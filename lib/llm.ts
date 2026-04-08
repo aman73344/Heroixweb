@@ -73,43 +73,64 @@ export async function generateLLMResponse(
   const apiKey = process.env.OPENROUTER_API_KEY;
   
   if (!apiKey) {
+    console.log('No API key, using fallback');
     return generateEnhancedFallbackResponse(messages, products);
   }
 
   const systemPrompt = SYSTEM_PROMPT_TEMPLATE(products);
   
-  try {
-    // Try Google Gemini Flash (free tier on OpenRouter)
-    const response = await fetch(OPENROUTER_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-        'X-Title': 'HEROIX AI Assistant',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.0-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
-        ],
-        max_tokens: 500,
-        temperature: 0.7,
-      }),
-      signal: AbortSignal.timeout(10000),
-    });
+  // Try multiple free models
+  const models = [
+    'google/gemini-2.0-flash',
+    'mistralai/mistral-7b-instruct',
+    'meta-llama/llama-3.2-3b-instruct',
+  ];
+  
+  for (const model of models) {
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+          'X-Title': 'HEROIX AI Assistant',
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...messages.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content }))
+          ],
+          max_tokens: 500,
+          temperature: 0.7,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
 
-    if (response.ok) {
-      const data: OpenRouterResponse = await response.json();
-      const content = data.choices?.[0]?.message?.content?.trim();
-      if (content && content.length > 5) return content;
+      if (response.ok) {
+        const data: OpenRouterResponse = await response.json();
+        
+        if (data.error) {
+          console.log(`Model ${model} error:`, data.error.message);
+          continue;
+        }
+        
+        const content = data.choices?.[0]?.message?.content?.trim();
+        if (content && content.length > 5) {
+          console.log(`Using model: ${model}`);
+          return content;
+        }
+      } else {
+        const errorText = await response.text();
+        console.log(`Model ${model} failed:`, response.status, errorText.substring(0, 200));
+      }
+    } catch (error: any) {
+      console.log(`Model ${model} exception:`, error.message);
     }
-  } catch (error) {
-    console.log('LLM call failed, using fallback');
   }
   
-  // Fallback to smart local responses
+  console.log('All LLM models failed, using fallback');
   return generateEnhancedFallbackResponse(messages, products);
 }
 
