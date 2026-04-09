@@ -21,6 +21,8 @@ interface SessionState {
   };
   lastAssistantMessage?: string;
   orderStep?: string;
+  mentionedProducts?: string[];
+  lastUserMessage?: string;
 }
 
 const sessions = new Map<string, SessionState>();
@@ -79,63 +81,137 @@ function getOrCreateSession(sessionId: string): SessionState {
   return sessions.get(sessionId)!;
 }
 
+function normalizeText(text: string): string {
+  return text.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function findProductsInMessage(
   userMessage: string,
-  products: any[]
-): Array<{id: string; name: string; price: number}> {
-  const lower = userMessage.toLowerCase();
-  const found: Array<{id: string; name: string; price: number}> = [];
+  products: any[],
+  sessionState?: SessionState
+): Array<{id: string; name: string; price: number; matchType: 'exact' | 'partial' | 'alias'}> {
+  const lower = normalizeText(userMessage);
+  const found: Array<{id: string; name: string; price: number; matchType: 'exact' | 'partial' | 'alias'}> = [];
   
   const validProducts = products.filter(p => p && p.name && typeof p.name === 'string');
-  const sortedProducts = [...validProducts].sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0));
   
-  const aliases: Record<string, string[]> = {
-    'goku': ['goku', 'dragon ball', 'dbz'],
-    'vegeta': ['vegeta', 'dragon ball', 'dbz'],
-    'naruto': ['naruto', 'uzumaki'],
-    'luffy': ['luffy', 'one piece'],
-    'spiderman': ['spider-man', 'spiderman', 'spidey'],
-    'batman': ['batman', 'bat'],
-    'ironman': ['iron man', 'ironman'],
-    'thor': ['thor', 'mjolnir'],
-    'superman': ['superman'],
+  const orderIntent = /order|buy|chahiye|bhej|mangta|chaiye|lagana/i.test(lower);
+  const onlyThesePatterns = /only these|just these|only this|only these ones|bas yeh|bas yehi|sirf yeh|only want|only these 3|these three|these ones/i;
+  
+  if (onlyThesePatterns.test(lower) && sessionState?.mentionedProducts?.length) {
+    for (const mentioned of sessionState.mentionedProducts) {
+      const match = validProducts.find(p => 
+        normalizeText(p.name).includes(normalizeText(mentioned)) ||
+        normalizeText(mentioned).includes(normalizeText(p.name))
+      );
+      if (match && !found.find(f => f.id === match.id)) {
+        found.push({ id: match.id, name: match.name, price: match.price || 0, matchType: 'exact' });
+      }
+    }
+    return found;
+  }
+  
+  const exactProductAliases: Record<string, string> = {
+    'goku': 'goku super sayian',
+    'gou': 'goku super sayian',
+    'dragon ball': 'dragon ball z goku',
+    'dbz': 'dragon ball z goku',
+    'super saiyan': 'goku super sayian',
+    'naruto': 'naruto',
+    'luffy': 'one piece',
+    'zoro': 'one piece',
+    'spiderman spinning': 'spiderman spinning',
+    'spinning': 'spiderman spinning',
+    'spiderman web': 'spiderman web',
+    'batman batarang': 'batman batarang',
+    'batarang': 'batman batarang',
+    'batrang': 'batman batarang',
+    'batman batrang': 'batman batarang',
+    'batman icon': 'batman icon',
+    'batman logo': 'batman icon',
+    'iron man': 'iron man arc reactor',
+    'ironman': 'iron man arc reactor',
+    'arc reactor': 'iron man arc reactor',
+    'thor mjolnir': 'thor mjolnir',
+    'thor hammer': 'thor mjolnir',
+    'superman shield': 'superman shield',
+    'superman': 'superman shield',
+    'wonder woman lasso': 'wonder woman lasso',
+    'wonder woman': 'wonder woman lasso',
+    'aquaman trident': 'aquaman trident',
+    'aquaman': 'aquaman trident',
+    'the flash lightning': 'the flash lightning',
+    'flash lightning': 'the flash lightning',
+    'cristiano ronaldo cr7': 'cristiano ronaldo cr7',
+    'ronaldo': 'cristiano ronaldo cr7',
+    'cr7': 'cristiano ronaldo cr7',
+    'lionel messi 10': 'lionel messi 10',
+    'messi': 'lionel messi 10',
+    'football trophy': 'football trophy',
+    'football': 'football trophy',
+    'neon genesis evangelion': 'neon genesis evangelion',
+    'evangelion': 'neon genesis evangelion',
+    'attack on titan': 'attack on titan',
+    'aot': 'attack on titan',
+    'demon slayer': 'demon slayer',
+    'jujutsu kaisen': 'jujutsu kaisen',
+    'jujutsu': 'jujutsu kaisen',
   };
   
-  for (const product of sortedProducts) {
+  const matchedProductNames = new Set<string>();
+  
+  for (const [alias, productName] of Object.entries(exactProductAliases)) {
+    if (lower.includes(alias)) {
+      matchedProductNames.add(productName);
+    }
+  }
+  
+  for (const product of validProducts) {
     if (!product.name) continue;
     
-    const nameLower = product.name.toLowerCase();
-    let matched = false;
+    const productNameLower = normalizeText(product.name);
     
-    if (lower.includes(nameLower)) {
-      matched = true;
+    if (lower.includes(productNameLower)) {
+      matchedProductNames.add(productNameLower);
     }
+  }
+  
+  for (const product of validProducts) {
+    if (!product.name) continue;
     
-    if (!matched && nameLower.length > 3) {
-      const words = nameLower.split(/\s+/);
-      const matchingWords = words.filter((w: string) => w.length > 3 && lower.includes(w));
-      if (matchingWords.length >= Math.ceil(words.length / 2)) {
-        matched = true;
+    const productNameLower = normalizeText(product.name);
+    
+    if (matchedProductNames.has(productNameLower)) {
+      if (!found.find(p => p.id === product.id)) {
+        found.push({ id: product.id, name: product.name, price: product.price || 0, matchType: 'exact' });
       }
-    }
-    
-    if (!matched) {
-      for (const [alias, variations] of Object.entries(aliases)) {
-        const messageHasAlias = variations.some((v: string) => lower.includes(v));
-        const productHasAlias = variations.some((v: string) => nameLower.includes(v));
-        if (messageHasAlias && productHasAlias) {
-          matched = true;
-          break;
-        }
-      }
-    }
-    
-    if (matched && !found.find(p => p.id === product.id)) {
-      found.push({ id: product.id, name: product.name, price: product.price || 0 });
     }
   }
   
   return found;
+}
+
+function trackMentionedProducts(userMessage: string, products: any[], sessionState: SessionState) {
+  const found = findProductsInMessage(userMessage, products, sessionState);
+  
+  if (found.length > 0) {
+    if (!sessionState.mentionedProducts) {
+      sessionState.mentionedProducts = [];
+    }
+    
+    for (const product of found) {
+      if (!sessionState.mentionedProducts.includes(product.name)) {
+        sessionState.mentionedProducts.push(product.name);
+      }
+    }
+    
+    if (sessionState.mentionedProducts.length > 10) {
+      sessionState.mentionedProducts = sessionState.mentionedProducts.slice(-10);
+    }
+  }
 }
 
 function extractQuantitiesForProducts(
@@ -335,14 +411,98 @@ async function handleOrderFlow(
     return `🎉 Order confirmed!\n\n📦 Order: ${itemsList}\n💰 Total: Rs ${total}\n📍 Delivery to: ${orderState.city}\n\n🆔 Order ID: ${newOrder.id}\n\nYou'll receive a confirmation call shortly. Thanks for shopping with HEROIX!`;
   }
   
-  const foundProducts = findProductsInMessage(userMessage, products);
+  const onlyThesePatterns = /only these|just these|only these 3|only this|only these ones|bas yeh|bas yehi|sirf yeh|only want these|only these ones|these three|these ones/i;
+  const alsoAddPatterns = /^(also add|add also|and also|add karo|bhi|aur add|add bhi)/i;
+  const excludePatterns = /exclude|remove|not want|don't want|without|nahi chahiye|nahi lena/i;
+  
+  let foundProducts: Array<{id: string; name: string; price: number; matchType: 'exact' | 'partial' | 'alias'}> = [];
+  
+  if (excludePatterns.test(lower) && orderState.items.length > 0) {
+    const normalizedLower = normalizeText(lower);
+    const excludeWords = normalizedLower.split(' ').filter(w => w.length >= 3);
+    
+    const excludedItems = orderState.items.filter(item => {
+      const itemNorm = normalizeText(item.product);
+      return excludeWords.some(word => itemNorm.includes(word) || word.includes(itemNorm.split(' ')[0]));
+    });
+    
+    if (excludedItems.length > 0) {
+      for (const excluded of excludedItems) {
+        orderState.items = orderState.items.filter(i => i.product !== excluded.product);
+      }
+      
+      if (orderState.items.length === 0) {
+        orderState.items = [];
+        sessionState.orderStep = 'product';
+        return "No problem! Which keychains would you like to order?";
+      }
+      
+      if (orderState.items.length === 1 && orderState.items[0].quantity === 0) {
+        sessionState.orderStep = `qty_${orderState.items[0].product.split(' ')[0].toLowerCase()}`;
+        return `Got it! Just ${orderState.items[0].product}. How many do you need?`;
+      }
+      
+      const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
+      if (itemsNeedingQty.length > 0) {
+        sessionState.orderStep = 'qty_all';
+        const itemList = orderState.items.map((item, idx) => `${idx + 1}. ${item.product}`).join(', ');
+        return `Updated! You want: ${itemList}. Please tell me the quantity for each:`;
+      }
+      
+      const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product}`).join(', ');
+      sessionState.orderStep = 'name';
+      return `Got it! Your order: ${itemsList}. What's your name?`;
+    }
+  }
+  
+  foundProducts = findProductsInMessage(userMessage, products, sessionState);
+  
   if (foundProducts.length > 0) {
     const quantities = extractQuantitiesForProducts(userMessage, foundProducts.map(p => p.name));
+    
+    const isAlsoAdd = alsoAddPatterns.test(lower) && orderState.items.length > 0 && !onlyThesePatterns.test(lower);
+    
+    if (!isAlsoAdd && !onlyThesePatterns.test(lower)) {
+      orderState.items = [];
+    }
+    
+    const currentProducts = foundProducts;
+    
+    if (lower.match(/^\d+([,\/]\d+)*$/) && foundProducts.length > 0) {
+      const parts = lower.split(/[,\/]/);
+      let idx = 0;
+      for (const found of foundProducts) {
+        if (idx < parts.length) {
+          const qty = parseInt(parts[idx]);
+          if (qty > 0 && qty <= 100) {
+            const existingIndex = orderState.items.findIndex(i => i.productId === found.id);
+            if (existingIndex >= 0) {
+              orderState.items[existingIndex].quantity = qty;
+            } else {
+              orderState.items.push({
+                product: found.name,
+                productId: found.id,
+                price: found.price,
+                quantity: qty
+              });
+            }
+          }
+          idx++;
+        }
+      }
+      
+      const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
+      if (itemsNeedingQty.length === 0) {
+        sessionState.orderStep = 'name';
+        const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product}`).join(', ');
+        return `Perfect! Your order: ${itemsList}. What's your name?`;
+      }
+    }
     
     const confirmedItems = orderState.items.filter(i => i.quantity > 0);
     orderState.items = [...confirmedItems];
     
-    for (const found of foundProducts) {
+    for (const found of currentProducts) {
       const existingIndex = orderState.items.findIndex(i => i.productId === found.id);
       const qty = quantities.get(found.name) || 0;
       
@@ -369,7 +529,7 @@ async function handleOrderFlow(
       
       sessionState.orderStep = 'qty_all';
       const itemList = itemsNeedingQty.map((item, idx) => `${idx + 1}. ${item.product}`).join(', ');
-      return `I found ${itemsNeedingQty.length} keychains: ${itemList}. Please tell me the quantity for each (e.g., "3 for spiderman and 5 for ironman"):`;
+      return `Great choices! How many of each?\n${itemList}\n\n(Example: "1 for spiderman, 1 for batman, 1 for goku")`;
     }
     
     sessionState.orderStep = 'name';
@@ -380,13 +540,38 @@ async function handleOrderFlow(
   if (sessionState.orderStep === 'qty_all') {
     const itemsNeedingQty = orderState.items.filter(i => i.quantity === 0);
     if (itemsNeedingQty.length > 0) {
+      
+      if (lower.match(/^\d+([,\/]\d+)*$/) || lower.match(/^\d+\s+\d+\s+\d+$/)) {
+        const parts = lower.split(/[,\/\s]+/).filter(p => p.match(/^\d+$/));
+        let idx = 0;
+        for (const item of itemsNeedingQty) {
+          if (idx < parts.length) {
+            const qty = parseInt(parts[idx]);
+            if (qty > 0 && qty <= 100) {
+              item.quantity = qty;
+            }
+            idx++;
+          }
+        }
+        
+        const stillNeedQty = itemsNeedingQty.filter(i => i.quantity === 0);
+        if (stillNeedQty.length === 0) {
+          sessionState.orderStep = 'name';
+          const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product}`).join(', ');
+          return `Perfect! Your order: ${itemsList}. What's your name?`;
+        }
+      }
+      
       let allHaveQty = true;
       
       for (const item of itemsNeedingQty) {
+        if (item.quantity > 0) continue;
+        
         const firstWord = item.product.split(' ')[0].toLowerCase();
         const patterns = [
           new RegExp(`(\\d+)\\s+(?:x|×)?\\s*(?:for|of)?\\s*${firstWord}`, 'i'),
           new RegExp(`${firstWord}.*?:\\s*(\\d+)`, 'i'),
+          new RegExp(`(\\d+)\\s+${firstWord}`, 'i'),
         ];
         
         let foundQty = 0;
@@ -585,21 +770,29 @@ export async function POST(request: NextRequest) {
     
     const products = await getProductContext();
     
+    trackMentionedProducts(userMessage.content, products, sessionState);
+    
     const lastUserMsg = userMessage.content.toLowerCase();
     const isOrderIntent = lastUserMsg.includes('order') || lastUserMsg.includes('buy') || 
                           lastUserMsg.includes('chahiye') || lastUserMsg.includes('bhej');
     
     let response: string;
     
+    const sessionContext = {
+      lastProductsMentioned: sessionState.mentionedProducts || [],
+      lastUserMessage: sessionState.lastUserMessage,
+      orderStep: sessionState.orderStep,
+    };
+    
     if (sessionState.orderStep || isOrderIntent) {
       const orderResponse = await handleOrderFlow(sessionState, userMessage.content, products);
       if (orderResponse) {
         response = orderResponse;
       } else {
-        response = await generateLLMResponse(conversationHistory, products);
+        response = await generateLLMResponse(conversationHistory, products, sessionContext);
       }
     } else {
-      response = await generateLLMResponse(conversationHistory, products);
+      response = await generateLLMResponse(conversationHistory, products, sessionContext);
     }
     
     if (sessionState.lastAssistantMessage === response) {
@@ -607,6 +800,7 @@ export async function POST(request: NextRequest) {
     }
     
     sessionState.lastAssistantMessage = response;
+    sessionState.lastUserMessage = userMessage.content;
     sessions.set(sessionId, sessionState);
     
     conversationHistory.push({
