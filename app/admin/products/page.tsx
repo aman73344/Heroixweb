@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { products } from "@/lib/products";
-import { Edit2, Trash2, Plus, X } from "lucide-react";
-import { getProducts, saveProducts } from "@/lib/db";
+
+import { Edit2, Trash2, Plus, X, Upload, Loader2 } from "lucide-react";
+import { getProducts } from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 
 interface ProductForm {
   name: string;
@@ -19,12 +20,13 @@ interface ProductForm {
 }
 
 export default function ProductsPage() {
-  const [productList, setProductList] = useState(products);
+  const [productList, setProductList] = useState<any[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
 
-  // Load products from IndexedDB on mount
   useEffect(() => {
     const loadProducts = async () => {
       try {
@@ -33,27 +35,12 @@ export default function ProductsPage() {
           setProductList(savedProducts);
         }
       } catch (error) {
-        console.error("Failed to load products from IndexedDB:", error);
-        // Fallback to default products if IndexedDB fails
-        setProductList(products);
+        console.error("Failed to load products:", error);
+        setProductList([]);
       }
     };
     loadProducts();
   }, []);
-
-  // Save products to IndexedDB whenever productList changes
-  useEffect(() => {
-    const saveToDB = async () => {
-      try {
-        await saveProducts(productList);
-      } catch (error) {
-        console.error("Failed to save products:", error);
-      }
-    };
-    if (productList !== products) {
-      saveToDB();
-    }
-  }, [productList]);
 
   const [form, setForm] = useState<ProductForm>({
     name: "",
@@ -65,35 +52,93 @@ export default function ProductsPage() {
     images: [],
   });
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const uploadImageToStorage = async (file: File, productId: string, index: number): Promise<string | null> => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${productId}/${Date.now()}-${index}.${fileExt}`;
+      
+      const { data, error } = await supabase.storage
+        .from('products')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true,
+        });
+
+      if (error) {
+        console.error('Upload error:', error);
+        return null;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from('products')
+        .getPublicUrl(fileName);
+
+      return urlData.publicUrl;
+    } catch (error) {
+      console.error('Upload failed:', error);
+      return null;
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files) {
-      Array.from(files).forEach((file) => {
+    if (!files || files.length === 0) return;
+
+    const currentImages = form.images.length;
+    const remainingSlots = 5 - currentImages;
+    
+    if (remainingSlots <= 0) {
+      alert('Maximum 5 images allowed');
+      return;
+    }
+
+    const filesToUpload = Array.from(files).slice(0, remainingSlots);
+    
+    if (filesToUpload.length === 0) return;
+
+    setIsUploading(true);
+    setUploadProgress("Uploading images...");
+
+    const tempProductId = editingProductId || `temp-${Date.now()}`;
+    const uploadedUrls: string[] = [];
+
+    try {
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const file = filesToUpload[i];
+        
         if (!file.type.startsWith('image/')) {
           alert('Please select an image file.');
-          return;
+          continue;
         }
-        if (file.size > 5 * 1024 * 1024) {
-          alert('Image file is too large. Please select an image under 5MB.');
-          return;
+        
+        if (file.size > 2 * 1024 * 1024) {
+          alert(`Image "${file.name}" is too large. Max 2MB allowed.`);
+          continue;
         }
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const result = event.target?.result;
-          if (result && typeof result === 'string') {
-            setForm((prev) => ({
-              ...prev,
-              images: [...prev.images, result].slice(0, 5),
-            }));
-          }
-        };
-        reader.onerror = () => {
-          console.error('Error reading file');
-          alert('Error reading file. Please try again.');
-        };
-        reader.readAsDataURL(file);
-      });
+
+        setUploadProgress(`Uploading ${i + 1}/${filesToUpload.length}...`);
+
+        const url = await uploadImageToStorage(file, tempProductId, i);
+        if (url) {
+          uploadedUrls.push(url);
+        }
+      }
+
+      if (uploadedUrls.length > 0) {
+        setForm((prev) => ({
+          ...prev,
+          images: [...prev.images, ...uploadedUrls],
+        }));
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Failed to upload some images. Please try again.');
+    } finally {
+      setIsUploading(false);
+      setUploadProgress("");
     }
+
+    e.target.value = '';
   };
 
   const removeImage = (index: number) => {
@@ -102,6 +147,8 @@ export default function ProductsPage() {
       images: prev.images.filter((_, i) => i !== index),
     }));
   };
+
+
 
   const filteredProducts = productList.filter(
     (p) =>
@@ -120,65 +167,96 @@ export default function ProductsPage() {
       return;
     }
 
-    const productData = {
-      id: editingProductId || `prod-${Date.now()}`,
-      ...form,
-      image: form.images[0],
-      inStock: form.stock > 0,
-      reviews: 0,
-    };
-
-    if (editingProductId) {
-      setProductList((prev) =>
-        prev.map((p) =>
-          p.id === editingProductId ? productData : p,
-        ),
-      );
-    } else {
-      setProductList((prev) => [...prev, productData]);
-    }
-
+    const productId = editingProductId || `prod-${Date.now()}`;
+    
     try {
-      const response = await fetch("/api/products", {
+      const productToSave = {
+        id: productId,
+        name: form.name,
+        description: form.description,
+        price: form.price,
+        category: form.category,
+        stock: form.stock,
+        rating: form.rating,
+        image: form.images[0],
+        image_urls: form.images,
+        reviews: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const response = await fetch("/api/admin-products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "add",
-          product: productData,
-        }),
+        body: JSON.stringify({ action: "save", product: productToSave }),
       });
-      if (!response.ok) {
-        console.error("Failed to save product to server");
-      }
-    } catch (error) {
-      console.error("Error saving product:", error);
-    }
 
-    setForm({
-      name: "",
-      description: "",
-      price: 0,
-      category: "Anime",
-      stock: 0,
-      rating: 4.5,
-      images: [],
-    });
-    setShowAddForm(false);
-    setEditingProductId(null);
+      const result = await response.json();
+
+      if (!result.success) {
+        alert("Error saving: " + (result.error || "Unknown error"));
+        return;
+      }
+
+      const productData = {
+        id: productId,
+        name: form.name,
+        description: form.description,
+        price: form.price,
+        category: form.category,
+        stock: form.stock,
+        rating: form.rating,
+        image: form.images[0],
+        images: form.images,
+        inStock: form.stock > 0,
+        reviews: 0,
+      };
+
+      if (editingProductId) {
+        setProductList((prev) =>
+          prev.map((p) =>
+            p.id === editingProductId ? productData : p,
+          ),
+        );
+      } else {
+        setProductList((prev) => [...prev, productData]);
+      }
+
+      setForm({
+        name: "",
+        description: "",
+        price: 0,
+        category: "Anime",
+        stock: 0,
+        rating: 4.5,
+        images: [],
+      });
+      setShowAddForm(false);
+      setEditingProductId(null);
+
+    } catch (error: any) {
+      console.error("Error:", error);
+    }
   };
 
   const handleEditProduct = (productId: string) => {
-    const product = productList.find((p) => p.id === productId);
+    const product = productList.find((p: any) => p.id === productId);
     if (product) {
       setEditingProductId(productId);
+      
+      const images = product.images?.length > 0 
+        ? product.images 
+        : [product.image].filter(Boolean) 
+        || ['/placeholder.jpg'];
+      
       setForm({
         name: product.name,
         description: product.description,
         price: product.price,
         category: product.category,
-        stock: (product as any).stock ?? 1,
+        stock: product.stock ?? 1,
         rating: product.rating,
-        images: product.images || [product.image],
+        images: images,
       });
       setShowAddForm(true);
     }
@@ -187,14 +265,12 @@ export default function ProductsPage() {
   const handleDeleteProduct = async (productId: string) => {
     if (confirm("Are you sure you want to delete this product?")) {
       setProductList((prev) => prev.filter((p) => p.id !== productId));
+      
       try {
-        await fetch("/api/products", {
+        await fetch("/api/admin-products", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "delete",
-            product: { id: productId },
-          }),
+          body: JSON.stringify({ action: "delete", product: { id: productId } }),
         });
       } catch (error) {
         console.error("Error deleting product:", error);
@@ -327,13 +403,25 @@ export default function ProductsPage() {
               <label className="text-sm text-muted-foreground block mb-2">
                 Product Images * (Max 5)
               </label>
-              <input
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="w-full px-3 py-2 bg-background/50 border border-border rounded-lg text-foreground focus:outline-none focus:border-accent file:bg-accent file:text-accent-foreground file:border-0 file:rounded file:px-3 file:py-1 file:mr-2"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  disabled={isUploading || form.images.length >= 5}
+                  className="flex-1 px-3 py-2 bg-background/50 border border-border rounded-lg text-foreground focus:outline-none focus:border-accent file:bg-accent file:text-accent-foreground file:border-0 file:rounded file:px-3 file:py-1 file:mr-2 disabled:opacity-50"
+                />
+                {isUploading && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>{uploadProgress}</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Max 2MB per image. Images upload to cloud storage.
+              </p>
               {form.images.length > 0 && (
                 <div className="mt-4">
                   <p className="text-xs text-muted-foreground mb-2">
@@ -396,12 +484,17 @@ export default function ProductsPage() {
 
       {/* Products Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredProducts.map((product) => (
+        {filteredProducts.map((product: any) => {
+          const images = product.images?.length > 0 
+            ? product.images 
+            : [product.image].filter(Boolean) 
+            || ['/placeholder.jpg'];
+          return (
           <Card key={product.id} className="border-border overflow-hidden">
             <div className="h-48 bg-card/50 border-b border-border overflow-x-auto">
-              {product.images && product.images.length > 0 ? (
+              {images && images.length > 0 ? (
                 <div className="flex gap-2 w-full h-full items-center justify-start">
-                  {product.images.map((img, idx) => (
+                  {images.map((img: string, idx: number) => (
                     <div
                       key={idx}
                       className="h-48 flex-shrink-0 w-48 flex items-center justify-center bg-card/30 rounded p-2"
@@ -468,7 +561,8 @@ export default function ProductsPage() {
               </div>
             </div>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       {filteredProducts.length === 0 && (

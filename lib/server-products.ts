@@ -29,19 +29,22 @@ export async function getServerProducts(): Promise<Product[]> {
 
 export async function saveServerProducts(products: Product[]): Promise<boolean> {
   try {
-    const cleanedProducts = products.map(p => ({
-      id: p.id,
-      name: p.name,
-      description: p.description || '',
-      price: p.price,
-      category: p.category,
-      stock: p.stock || 0,
-      image: p.image || p.images?.[0] || '/placeholder.jpg',
-      rating: p.rating || 4.5,
-      reviews: p.reviews || 0,
-      created_at: p.created_at || new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }));
+    const cleanedProducts = products.map(p => {
+      const firstImage = p.images?.[0] || p.image || '/placeholder.jpg';
+      return {
+        id: p.id,
+        name: p.name,
+        description: p.description || '',
+        price: p.price,
+        category: p.category,
+        stock: p.stock || 0,
+        image: firstImage,
+        rating: p.rating || 4.5,
+        reviews: p.reviews || 0,
+        created_at: p.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+    });
     
     const { error } = await (supabase as any)
       .from('products')
@@ -60,6 +63,7 @@ export async function saveServerProducts(products: Product[]): Promise<boolean> 
 
 export async function addServerProduct(product: Product): Promise<boolean> {
   try {
+    const firstImage = product.images?.[0] || product.image || '/placeholder.jpg';
     const productData = {
       id: product.id,
       name: product.name,
@@ -67,8 +71,7 @@ export async function addServerProduct(product: Product): Promise<boolean> {
       price: product.price,
       category: product.category,
       stock: product.stock || 0,
-      image: product.image || product.images?.[0] || '/placeholder.jpg',
-      images: product.images?.length ? product.images : [product.image || '/placeholder.jpg'],
+      image: firstImage,
       rating: product.rating || 4.5,
       reviews: product.reviews || 0,
       created_at: product.created_at || new Date().toISOString(),

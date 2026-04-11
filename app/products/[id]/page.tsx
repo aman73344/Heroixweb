@@ -9,6 +9,7 @@ import {
   Star,
   ShoppingCart,
   ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { getProducts } from "@/lib/db";
@@ -22,6 +23,7 @@ export default function ProductPage() {
   const [product, setProduct] = useState<any>(null);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const { addItem, totalItems } = useCart();
 
   useEffect(() => {
@@ -99,6 +101,23 @@ export default function ProductPage() {
     });
   };
 
+  const images = product.images?.length > 0 
+    ? product.images 
+    : [product.image].filter(Boolean) 
+    || ['/placeholder.jpg'];
+
+  const goToPreviousImage = () => {
+    setCurrentImageIndex((prev) => 
+      prev === 0 ? images.length - 1 : prev - 1
+    );
+  };
+
+  const goToNextImage = () => {
+    setCurrentImageIndex((prev) => 
+      prev === images.length - 1 ? 0 : prev + 1
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
@@ -156,18 +175,58 @@ export default function ProductPage() {
             <div className="space-y-6">
               <div className="relative h-96 bg-card/50 overflow-hidden group flex items-center justify-center">
                 <img
-                  src={product.image}
-                  alt={product.name}
+                  src={images[currentImageIndex]}
+                  alt={`${product.name} - Image ${currentImageIndex + 1}`}
                   className="w-full h-full object-contain"
                 />
+                
+                {/* Left Arrow */}
+                {images.length > 1 && (
+                  <button
+                    onClick={goToPreviousImage}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                    aria-label="Previous image"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+                )}
+                
+                {/* Right Arrow */}
+                {images.length > 1 && (
+                  <button
+                    onClick={goToNextImage}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
+                    aria-label="Next image"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                )}
               </div>
 
               {/* Image Counter */}
               <div className="text-center">
-                <div className="bg-black/50 text-white text-xs px-2 py-1 rounded inline-block">
-                  1/1
+                <div className="bg-black/50 text-white text-xs px-3 py-1 rounded inline-block">
+                  {currentImageIndex + 1}/{images.length}
                 </div>
               </div>
+
+              {/* Image Dots */}
+              {images.length > 1 && (
+                <div className="flex justify-center gap-2">
+                  {images.map((_: string, index: number) => (
+                    <button
+                      key={index}
+                      onClick={() => setCurrentImageIndex(index)}
+                      className={`w-2 h-2 rounded-full transition-all ${
+                        index === currentImageIndex 
+                          ? 'bg-accent w-4' 
+                          : 'bg-muted-foreground/30 hover:bg-muted-foreground/50'
+                      }`}
+                      aria-label={`Go to image ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Right side - Product Details */}

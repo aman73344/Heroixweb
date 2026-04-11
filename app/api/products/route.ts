@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerProducts, saveServerProducts, addServerProduct, deleteServerProduct } from '@/lib/server-products';
+import { supabase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,11 +41,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (action === 'add' && product) {
-      const success = await addServerProduct(product);
+    if ((action === 'add' || action === 'update-single') && product) {
+      const firstImage = product.images?.[0] || product.image || '/placeholder.jpg';
+      const productData = {
+        id: product.id,
+        name: product.name,
+        description: product.description || '',
+        price: product.price,
+        category: product.category || 'Anime',
+        stock: product.stock || 0,
+        image: firstImage,
+        rating: product.rating || 4.5,
+        reviews: product.reviews || 0,
+        created_at: product.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await (supabase as any)
+        .from('products')
+        .upsert([productData], { onConflict: 'id' });
+
+      if (error) {
+        console.error('Error saving product:', error);
+        return NextResponse.json(
+          { success: false, message: 'Product saved to list but database error', error: error.message },
+          { status: 200 }
+        );
+      }
+
       return NextResponse.json(
-        { success, message: 'Product added' },
-        { status: success ? 200 : 500 },
+        { success: true, message: 'Product saved' },
+        { status: 200 },
       );
     }
 

@@ -26,25 +26,38 @@ export async function getProducts(): Promise<any[]> {
   try {
     const { data, error } = await (supabase as any)
       .from('products')
-      .select('id, name, category, price, stock, description, image, images, rating, reviews');
+      .select('id, name, category, price, stock, description, image, image_urls, rating, reviews')
+      .limit(50);
     
     if (error) {
       console.error('Supabase error:', error);
-      return DEFAULT_PRODUCTS;
+      return [];
     }
     
     if (data && data.length > 0) {
-      return data.map((p: any) => ({
-        ...p,
-        image: p.image || '/placeholder.jpg',
-        images: p.image ? [p.image] : ['/placeholder.jpg']
-      }));
+      return data.map((p: any) => {
+        let images: string[] = ['/placeholder.jpg'];
+        
+        // Use image_urls array if available
+        if (p.image_urls && Array.isArray(p.image_urls) && p.image_urls.length > 0) {
+          images = p.image_urls;
+        } else if (p.image) {
+          images = [p.image];
+        }
+        
+        return {
+          ...p,
+          image: images[0],
+          images: images,
+          inStock: p.stock > 0
+        };
+      });
     }
     
-    return DEFAULT_PRODUCTS;
+    return [];
   } catch (error) {
     console.error('Error fetching from Supabase:', error);
-    return DEFAULT_PRODUCTS;
+    return [];
   }
 }
 
@@ -53,8 +66,6 @@ export async function saveProducts(productsToSave: any[]): Promise<void> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const cleanedProducts = productsToSave.map(p => {
-        const imgArray = p.images && p.images.length > 0 ? p.images : (p.image ? [p.image] : ['/placeholder.jpg']);
-        const img = imgArray[0];
         return {
           id: p.id,
           name: p.name,
@@ -62,8 +73,7 @@ export async function saveProducts(productsToSave: any[]): Promise<void> {
           price: p.price,
           category: p.category || 'Anime',
           stock: p.stock || 0,
-          image: img,
-          images: imgArray,
+          image: p.images?.[0] || p.image || '/placeholder.jpg',
           rating: p.rating || 4.5,
           reviews: p.reviews || 0,
           created_at: p.created_at || new Date().toISOString(),
