@@ -26,7 +26,7 @@ export async function getProducts(): Promise<any[]> {
   try {
     const { data, error } = await (supabase as any)
       .from('products')
-      .select('id, name, category, price, stock, description, image, rating, reviews');
+      .select('id, name, category, price, stock, description, image, images, rating, reviews');
     
     if (error) {
       console.error('Supabase error:', error);
@@ -53,7 +53,8 @@ export async function saveProducts(productsToSave: any[]): Promise<void> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const cleanedProducts = productsToSave.map(p => {
-        const img = p.image || p.images?.[0] || '/placeholder.jpg';
+        const imgArray = p.images && p.images.length > 0 ? p.images : (p.image ? [p.image] : ['/placeholder.jpg']);
+        const img = imgArray[0];
         return {
           id: p.id,
           name: p.name,
@@ -62,6 +63,7 @@ export async function saveProducts(productsToSave: any[]): Promise<void> {
           category: p.category || 'Anime',
           stock: p.stock || 0,
           image: img,
+          images: imgArray,
           rating: p.rating || 4.5,
           reviews: p.reviews || 0,
           created_at: p.created_at || new Date().toISOString(),

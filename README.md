@@ -1,317 +1,264 @@
-# HEROIX - AI-Powered E-commerce Keychain Store
+================================================================================
+HEROIX - E-commerce Store
+AI-Powered Keychain Shopping Experience
+================================================================================
 
-## Overview
+## PRODUCT OVERVIEW
 
-HEROIX is a modern, AI-powered e-commerce web application specializing in anime, superhero, and sports keychains. The application features a sophisticated AI chatbot that helps customers browse products, place orders, and get personalized recommendations.
+HEROIX is a modern e-commerce web application specializing in premium anime,
+superhero, Marvel, DC, and sports keychains. The app features an AI-powered
+chatbot assistant (HEROIX AI) that helps customers browse products, get
+personalized recommendations, and place orders through natural conversation.
 
-## Key Features
+Target Market: Pakistan
+Payment Method: Cash on Delivery (COD)
+Shipping: Rs 250 Nationwide
 
-### 🤖 AI Chatbot Assistant
+## TECHNOLOGY STACK
 
-- **Natural Language Processing**: Conversational AI that understands customer requests
-- **Product Discovery**: Helps customers find keychains by name, category, or description
-- **Order Processing**: Complete order flow with step-by-step guidance
-- **Multiple Product Support**: Handles complex orders with multiple items and quantities
-- **Smart Quantity Detection**: Automatically detects quantities from phrases like "3 Batman and 2 Joker"
+Frontend: Next.js 16.2.0 (App Router), React 19.2.4
+Language: TypeScript 5.7.3
+UI Components: Radix UI + 57 Shadcn/ui components
+Styling: Tailwind CSS 4.2.0
+Database: Supabase (PostgreSQL)
+AI/LLM: OpenRouter API (Multiple free models)
+State Management: React Context API
+Forms: React Hook Form + Zod validation
+Analytics: Vercel Analytics
+Icons: Lucide React
+Charts: Recharts
 
-### 🛒 E-commerce Functionality
+## KEY FEATURES
 
-- **Product Catalog**: Browse anime, Marvel, DC, and sports keychains
-- **Shopping Cart**: Add/remove items with real-time price calculations
-- **Checkout Flow**: Secure checkout with order confirmation
-- **Order Management**: Admin panel for managing orders and customer information
+1. AI CHATBOT ASSISTANT (HEROIX AI)
+   - Natural language product discovery and search
+   - Conversational order placement flow
+   - Multi-step order processing (product -> quantity -> name -> phone ->
+     city -> address -> confirmation)
+   - Smart product name and alias matching
+   - Session-based conversation state management
+   - Multi-product orders with quantity detection
+   - Fallback responses when AI API is unavailable
 
-### 🎨 Modern UI/UX
+2. E-COMMERCE FUNCTIONALITY
+   - Product catalog with category filtering (Anime, Superhero, Marvel,
+     DC, Sports)
+   - Product detail pages with image gallery/carousel
+   - Shopping cart (add, remove, update quantities)
+   - Checkout flow with shipping form
+   - Order management (create, view, update status, delete)
+   - Product ratings and reviews display
 
-- **Responsive Design**: Works seamlessly on desktop, tablet, and mobile
-- **Dark/Light Theme**: Automatic theme switching based on system preferences
-- **Product Gallery**: High-quality product images with hover effects
-- **Loading States**: Smooth animations and loading indicators
+3. ADMIN DASHBOARD
+   - Secure admin authentication (email/password)
+   - Product management (add, edit, delete with image upload)
+   - Order management (view, filter by status, update status, delete)
+   - Real-time statistics and overview
 
-## Technical Architecture
+4. USER INTERFACE
+   - Dark/Light theme toggle (dark mode default)
+   - Responsive mobile-first design
+   - Real-time cart badge updates
+   - Loading states and error handling
+   - Smooth animations and transitions
 
-### Frontend
+## PROJECT STRUCTURE
 
-- **Framework**: Next.js 15 with App Router
-- **UI Library**: Shadcn/ui components with custom styling
-- **State Management**: React Context API for cart and theme
-- **Styling**: Tailwind CSS with custom design system
-- **TypeScript**: Full type safety throughout the application
-
-### Backend
-
-- **API Routes**: Next.js API routes for chat, products, and orders
-- **AI Integration**: OpenRouter API for LLM responses
-- **File-based Storage**: JSON files for product and order data
-- **Session Management**: In-memory session storage for chat conversations
-
-### AI Components
-
-- **LLM Integration**: OpenRouter API with custom system prompts
-- **Product Matching**: Smart regex-based product detection
-- **Order Flow**: State machine for handling multi-step order process
-- **Fallback Responses**: Graceful degradation when AI API is unavailable
-
-## Project Structure
-
-```
 Heroixweb/
-├── app/                    # Next.js App Router pages
-│   ├── api/               # API routes
-│   │   ├── chat/          # AI chatbot endpoint
-│   │   ├── products/      # Product management
-│   │   └── checkout/      # Order processing
-│   ├── admin/             # Admin dashboard
-│   ├── auth/              # Authentication pages
-│   ├── checkout/          # Checkout flow
-│   ├── products/          # Product catalog
-│   └── page.tsx           # Home page
-├── components/            # Reusable React components
-│   ├── chat-modal.tsx     # AI chatbot interface
-│   ├── theme-provider.tsx # Theme management
-│   └── ui/               # Shadcn/ui components
-├── lib/                   # Business logic and utilities
-│   ├── llm.ts            # AI chatbot logic
-│   ├── products.ts       # Product management
-│   ├── orders-store.ts   # Order persistence
-│   ├── cart-context.tsx  # Shopping cart state
-│   └── utils.ts          # Helper functions
-├── data/                 # Static data files
-│   └── orders.json       # Order database
-├── public/               # Static assets
-│   ├── heroix-logo.png   # Brand assets
-│   └── placeholder.jpg   # Default images
-└── styles/              # Global styles
-    └── globals.css       # Main stylesheet
-```
+|
+|--app/ Next.js App Router pages
+| |--api/ API routes
+| | |--chat/route.ts AI chatbot endpoint
+| | |--products/route.ts Product CRUD operations
+| | |--orders/route.ts Order management
+| | |--test-supabase/ Debug endpoints
+| |
+| |--admin/ Admin dashboard
+| | |--orders/page.tsx Order management page
+| | |--products/page.tsx Product management page
+| | |--page.tsx Admin login/dashboard
+| |
+| |--auth/ Authentication pages
+| |--checkout/ Checkout flow
+| |--products/[id]/ Product detail pages
+| |--layout.tsx Root layout
+| |--page.tsx Home page
+| |--globals.css Global styles
+|
+|--components/ React components
+| |--chat-modal.tsx AI chatbot UI component
+| |--theme-provider.tsx Theme management
+| |--ui/ Shadcn/ui component library
+|
+|--lib/ Utility functions and integrations
+| |--llm.ts OpenRouter AI integration
+| |--cart-context.tsx Shopping cart state management
+| |--db.ts Supabase database operations
+| |--supabase.ts Supabase client configuration
+| |--orders-store.ts Order CRUD operations
+| |--server-products.ts Server-side product operations
+| |--auth.ts Admin authentication logic
+| |--utils.ts Helper functions
+|
+|--data/ Local data storage
+| |--orders.json Order backup (reference only)
+|
+|--scripts/ Setup and utility scripts
+| |--setup-supabase.js Supabase database setup
+| |--test-products.js Product testing script
+|
+|--public/ Static assets
+| |--heroix-logo.png Brand logo
+| |--anime-bg.jpg Background images
+| |--superhero-bg.jpg
+|
+|--products.json Product catalog (local fallback)
+|--.env.example Environment template
+
+## DATABASE SCHEMA
+
+PRODUCTS TABLE:
+
+- id (uuid) Primary key
+- name (text) Product name
+- category (text) Category (anime/superhero/marvel/dc/sports)
+- price (number) Price in PKR
+- stock (number) Available stock quantity
+- description (text) Product description
+- images (text[]) Array of image URLs
+- rating (number) Average rating (0-5)
+- reviews (number) Total review count
+- created_at (timestamp) Creation timestamp
+- updated_at (timestamp) Last update timestamp
+
+ORDERS TABLE:
+
+- id (uuid) Primary key
+- date (timestamp) Order date
+- customer (text) Customer name
+- email (text) Customer email
+- phone (text) Contact number
+- address (text) Delivery address
+- city (text) Delivery city
+- items_count (number) Number of items ordered
+- total (number) Total amount in PKR
+- status (text) Order status
+- items_data (jsonb) Order items details
+- created_at (timestamp) Creation timestamp
+- updated_at (timestamp) Last update timestamp
+
+## API ENDPOINTS
+
+CHAT API
+POST /api/chat
+Body: { message: string, sessionId: string }
+Response: { response: string, orderId?: string }
+
+PRODUCTS API
+GET /api/products
+Query: ?category=string&search=string
+Response: Array of product objects
+
+POST /api/products
+Body: Product object (name, category, price, stock, description, images)
+Response: Created product object
+
+ORDERS API
+GET /api/orders
+Query: ?status=string
+Response: Array of order objects
 
-## AI Chatbot Features
+POST /api/orders
+Body: Order object (customer, email, phone, address, city, items, total)
+Response: Created order object
 
-### Product Discovery
+PATCH /api/orders
+Body: { id: string, status: string }
+Response: Updated order object
 
-The chatbot can understand various ways customers ask about products:
+DELETE /api/orders
+Query: ?id=string
+Response: { success: boolean }
 
-- "Show me Batman keychains"
-- "Do you have anime keychains?"
-- "What Marvel products do you have?"
+## INSTALLATION & SETUP
 
-### Order Processing
+1. Clone the repository:
+   git clone <repository-url>
+   cd Heroixweb
 
-Complete order flow with intelligent data extraction:
+2. Install dependencies:
+   npm install
 
-1. **Product Selection**: Detects product names and quantities
-2. **Customer Information**: Extracts name, phone, city, and address
-3. **Order Confirmation**: Provides summary and confirmation flow
-4. **Order Storage**: Saves orders to file-based database
+3. Set up environment variables:
+   Copy .env.example to .env.local and configure:
+   - SUPABASE_URL (your Supabase project URL)
+   - SUPABASE_ANON_KEY (Supabase anonymous key)
+   - OPENROUTER_API_KEY (OpenRouter API key for AI chatbot)
+   - ADMIN_EMAILS (comma-separated admin emails)
 
-### Smart Pattern Matching
+4. Set up Supabase database:
+   - Create a new Supabase project at supabase.com
+   - Run the setup script:
+     node scripts/setup-supabase.js
 
-- **Multiple Products**: "I want Batman and Joker keychains"
-- **Quantities**: "3 Spider-Man and 2 Iron Man"
-- **Flexible Input**: Handles typos, abbreviations, and natural language
+5. Start the development server:
+   npm run dev
 
-### Error Handling
+6. Access the application:
+   - Store: http://localhost:3000
+   - Admin: http://localhost:3000/admin
 
-- **Graceful Degradation**: Fallback responses when AI API fails
-- **Session Recovery**: Maintains conversation state across requests
-- **Input Validation**: Validates phone numbers, cities, and quantities
+## ADMIN CREDENTIALS
 
-## Installation & Setup
+Default admin login:
+Email: admin@heroix.com
+Password: admin123
 
-### Prerequisites
+Note: Update ADMIN_EMAILS environment variable to add more admin users.
 
-- Node.js 18+
-- npm or pnpm package manager
+## SHIPPING & PAYMENT
 
-### Installation
+- Payment Method: Cash on Delivery (COD) only
+- Shipping Cost: Rs 250 per order (nationwide)
+- Product Price Range: Rs 450 - 750
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd Heroixweb
+## TROUBLESHOOTING
 
-# Install dependencies
-npm install
+1. AI Chatbot not responding:
+   - Verify OPENROUTER_API_KEY is set correctly
+   - Check API quota/credits on OpenRouter dashboard
+   - Fallback responses are used when API is unavailable
 
-# Set up environment variables
-cp .env.example .env.local
-# Edit .env.local with your OpenRouter API key
-```
+2. Database connection errors:
+   - Verify SUPABASE_URL and SUPABASE_ANON_KEY are correct
+   - Check Supabase project status and quotas
+   - Ensure RLS policies allow anonymous access
 
-### Environment Variables
+3. Image upload fails in admin:
+   - Check Supabase storage bucket permissions
+   - Verify storage bucket 'products' exists
 
-```env
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
+4. Orders not saving:
+   - Verify orders table exists with correct schema
+   - Check RLS policies for insert permissions
 
-### Running the Application
+## PERFORMANCE FEATURES
 
-```bash
-# Development mode
-npm run dev
+- Server-side rendering for SEO optimization
+- Image optimization with Next.js Image component
+- Client-side caching for fast page loads
+- Optimistic UI updates for cart operations
+- Lazy loading for off-screen components
 
-# Production build
-npm run build
-npm start
+## SECURITY FEATURES
 
-# Visit http://localhost:3000
-```
+- Environment variables for sensitive data
+- Admin authentication for dashboard access
+- Input validation with Zod schemas
+- SQL injection prevention via Supabase
+- XSS protection via React's built-in escaping
 
-## API Endpoints
-
-### Chat API
-
-- **POST** `/api/chat` - Process chat messages and return AI responses
-- **Input**: { messages: [], sessionId?: string }
-- **Output**: { message: string, sessionId: string }
-
-### Products API
-
-- **GET** `/api/products` - Get all products
-- **GET** `/api/products/[id]` - Get specific product
-- **POST** `/api/products` - Create new product (admin)
-
-### Orders API
-
-- **GET** `/api/orders` - Get all orders (admin)
-- **POST** `/api/orders` - Create new order
-- **PUT** `/api/orders/[id]` - Update order status (admin)
-
-## Development
-
-### Adding New Products
-
-1. Edit `products.json` with new product data
-2. Products automatically sync with the application
-3. No database migrations required
-
-### Customizing the Chatbot
-
-1. Modify system prompt in `lib/llm.ts`
-2. Adjust product matching logic in `app/api/chat/route.ts`
-3. Test with various customer inputs
-
-### Theme Customization
-
-1. Edit color variables in `styles/globals.css`
-2. Update component styles in `components/ui/`
-3. Test responsive behavior across devices
-
-## Performance Features
-
-### Optimizations
-
-- **Image Optimization**: Next.js image component with lazy loading
-- **Code Splitting**: Automatic bundle splitting by page
-- **Caching**: Browser caching for static assets
-- **Minification**: Automatic CSS and JS minification in production
-
-### AI Performance
-
-- **Rate Limiting**: Built-in retry logic for API calls
-- **Session Management**: Efficient in-memory session storage
-- **Fallback Responses**: Quick responses when AI is slow
-
-## Security Features
-
-### Input Validation
-
-- **XSS Protection**: Sanitized user inputs
-- **SQL Injection**: No database queries, file-based storage only
-- **Rate Limiting**: API rate limiting to prevent abuse
-
-### Data Protection
-
-- **Session Isolation**: Separate sessions for each user
-- **No Sensitive Data**: No credit card or payment information stored
-- **File Permissions**: Secure file system permissions
-
-## Testing
-
-### Manual Testing
-
-1. Test chatbot with various product queries
-2. Verify order flow with multiple products
-3. Check responsive design on different devices
-4. Test error scenarios and edge cases
-
-### Automated Testing
-
-```bash
-# Run linting
-npm run lint
-
-# Check TypeScript
-npm run type-check
-
-# Format code
-npm run format
-```
-
-## Deployment
-
-### Vercel (Recommended)
-
-1. Connect repository to Vercel
-2. Set environment variables
-3. Deploy automatically on git push
-
-### Other Platforms
-
-- **Netlify**: Works with static export
-- **Docker**: Containerized deployment available
-- **Traditional Hosting**: Standard Node.js deployment
-
-## Troubleshooting
-
-### Common Issues
-
-**Chatbot not responding:**
-
-- Check OpenRouter API key in `.env.local`
-- Verify internet connection
-- Check browser console for errors
-
-**Products not loading:**
-
-- Verify `products.json` exists in root directory
-- Check file permissions
-- Restart development server
-
-**Orders not saving:**
-
-- Check `data/` directory exists and is writable
-- Verify file permissions
-- Check server logs for errors
-
-### Getting Help
-
-- Check the browser developer console for errors
-- Verify all environment variables are set
-- Ensure Node.js version is compatible
-- Review the application logs
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For support and questions:
-
-- Create an issue on GitHub
-- Check the troubleshooting section
-- Review the documentation
-
----
-
-**HEROIX** - Where AI meets e-commerce for the ultimate shopping experience! 🦸‍♂️🛒
+================================================================================
+Thank you for using HEROIX!
+AI-Powered E-commerce for Keychain Enthusiasts
+================================================================================
