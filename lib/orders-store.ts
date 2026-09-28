@@ -1,4 +1,4 @@
-import { getOrders as getOrdersFromSupabase, addOrderToSupabase, updateOrderInSupabase, deleteOrderFromSupabase, Order } from './db';
+import { getOrders as getOrdersFromSupabase, addOrderToSupabase, updateOrderInSupabase, deleteOrderFromSupabase } from './db';
 
 export interface AdminOrder {
   id: string;
@@ -38,10 +38,17 @@ export async function getOrders(): Promise<AdminOrder[]> {
 
 export async function addOrder(order: AdminOrder): Promise<boolean> {
   try {
-    await addOrderToSupabase(order);
-    return true;
+    // addOrderToSupabase never throws - it reports failure via its return value,
+    // so it must be propagated. Previously this always returned true, which made
+    // the chatbot/checkout tell the customer the order was placed even when the
+    // insert had failed.
+    const saved = await addOrderToSupabase(order);
+    if (!saved) {
+      console.error(`Failed to save order ${order.id} to database (customer: ${order.customer}, phone: ${order.phone})`);
+    }
+    return saved;
   } catch (error: any) {
-    console.error('Failed to save order to database:', error.message);
+    console.error('Failed to save order to database:', error?.message || error);
     return false;
   }
 }

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
@@ -8,135 +8,25 @@ import {
   Star,
   MessageCircle,
   ShoppingCart,
-  ChevronLeft,
-  ChevronRight,
   RefreshCw,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { ChatModal } from "@/components/chat-modal";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getProducts } from "@/lib/db";
+import { parseVariants, getVariantImages } from "@/lib/variants";
+import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 
 const defaultCategories = ['All', 'Anime', 'Superhero', 'Marvel', 'DC', 'Sports'];
 
-// Product Image Carousel Component
-function ProductImageCarousel({
-  images,
-  productName,
-  productImage,
-}: {
-  images?: string[];
-  productName: string;
-  productImage?: string;
-}) {
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  
-  // Support both images array and single image
-  let imageList: string[] = [];
-  if (images && images.length > 0) {
-    imageList = images;
-  } else if (productImage) {
-    imageList = [productImage];
-  }
-  
-  const hasMultipleImages = imageList.length > 1;
-  const displayImage = imageList[currentImageIndex] || null;
-
-  const goToPrevious = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCurrentImageIndex((prev) =>
-      prev === 0 ? imageList.length - 1 : prev - 1,
-    );
-  };
-
-  const goToNext = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCurrentImageIndex((prev) =>
-      prev === imageList.length - 1 ? 0 : prev + 1,
-    );
-  };
-
-  return (
-    <div className="relative h-48 bg-card/50 overflow-hidden group flex items-center justify-center">
-      {displayImage ? (
-        <>
-          {/* Current Image - Responsive without cropping */}
-          <img
-            src={displayImage}
-            alt={productName}
-            className="w-full h-full object-contain"
-            onError={(e) => {
-              // Fallback if image fails to load
-              (e.target as HTMLImageElement).style.display = 'none';
-              (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-            }}
-          />
-          {/* Fallback icon when image not loaded */}
-          <div className="absolute inset-0 flex items-center justify-center text-6xl font-black text-accent/30 hidden">
-            ★
-          </div>
-
-          {/* Image Counter */}
-          {hasMultipleImages && (
-            <div className="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-              {currentImageIndex + 1}/{imageList.length}
-            </div>
-          )}
-
-          {/* Navigation Arrows - Only show if multiple images */}
-          {hasMultipleImages && (
-            <>
-              <button
-                onClick={goToPrevious}
-                className="absolute left-2 top-1/2 -translate-y-1/2 bg-accent/90 hover:bg-accent text-accent-foreground p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10"
-                aria-label="Previous image"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <button
-                onClick={goToNext}
-                className="absolute right-2 top-1/2 -translate-y-1/2 bg-accent/90 hover:bg-accent text-accent-foreground p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10"
-                aria-label="Next image"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-
-              {/* Image Dots */}
-              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2">
-                {imageList.map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setCurrentImageIndex(idx);
-                    }}
-                    className={`w-2 h-2 rounded-full transition-all ${
-                      idx === currentImageIndex
-                        ? "bg-accent w-6"
-                        : "bg-white/50 hover:bg-white/80"
-                    }`}
-                    aria-label={`Go to image ${idx + 1}`}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </>
-      ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-accent/20 to-transparent flex items-center justify-center text-6xl font-black text-accent/30">
-          ★
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function Home() {
+  const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [chatOpen, setChatOpen] = useState(false);
   const [productList, setProductList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const { addItem, totalItems } = useCart();
+  const { addItem, items, totalItems } = useCart();
 
   useEffect(() => {
     const loadProducts = async () => {
@@ -161,12 +51,38 @@ export default function Home() {
       : productList.filter((p: any) => p.category === selectedCategory);
 
   const handleAddToCart = (product: any) => {
+    // If product has variants, direct to the product page so customer can pick their design & see stock
+    const variants = parseVariants(product.variants, Number(product.stock) || 0);
+    if (variants.length > 0) {
+      router.push(`/products/${product.id}`);
+      return;
+    }
+
+    const stock =
+      product.stock === null || product.stock === undefined || product.stock === ""
+        ? null
+        : Number(product.stock) || 0;
+
+    if (stock === 0) {
+      alert(`${product.name} is out of stock.`);
+      return;
+    }
+
+    if (stock !== null) {
+      const inCart = items.find((i) => i.productId === product.id && !i.variant)?.quantity || 0;
+      if (inCart + 1 > stock) {
+        alert(`Only ${stock} of ${product.name} in stock.`);
+        return;
+      }
+    }
+
     addItem({
       productId: product.id,
       name: product.name,
       price: product.price,
       quantity: 1,
       image: product.image,
+      ...(stock !== null ? { stock } : {}),
     });
   };
 
@@ -195,11 +111,6 @@ export default function Home() {
                   {totalItems}
                 </span>
               )}
-            </Link>
-            <Link href="/admin">
-              <Button variant="ghost" size="sm" className="text-foreground">
-                Admin
-              </Button>
             </Link>
           </div>
         </div>
@@ -235,7 +146,7 @@ export default function Home() {
                 <p className="text-xl text-muted-foreground text-balance">
                   Premium anime, superhero, Marvel, DC & sports keychains. Find
                   your perfect character with AI-powered recommendations.
-                  Shipping Rs 250 nationwide!
+                  Shipping Rs 280 nationwide!
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 animate-in fade-in slide-in-from-left duration-700 delay-200">
@@ -265,7 +176,7 @@ export default function Home() {
                 </div>
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
-                    4.8★
+                    4.8â˜…
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Customer Rating
@@ -273,7 +184,7 @@ export default function Home() {
                 </div>
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
-                    Rs 250
+                    Rs 280
                   </p>
                   <p className="text-sm text-muted-foreground">Fast Shipping</p>
                 </div>
@@ -341,19 +252,63 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProducts.map((product: any) => (
+            {filteredProducts.map((product: any) => {
+            const parsedVariants = parseVariants(product.variants, Number(product.stock) || 0);
+            const hasVariants = parsedVariants.length > 0;
+            const stockValue =
+              product.stock === null || product.stock === undefined || product.stock === ""
+                ? null
+                : Number(product.stock) || 0;
+            const isOutOfStock = stockValue === 0;
+            const isLowStock = stockValue !== null && stockValue > 0 && stockValue <= 5;
+            return (
             <Card
               key={product.id}
               className="group border-border hover:border-accent transition-all duration-300 overflow-hidden cursor-pointer"
-              onClick={() => window.location.href = `/products/${product.id}`}
+              onClick={() => router.push(`/products/${product.id}`)}
             >
-              {/* Product Image Carousel */}
+              {/* Product Image Carousel - cycles the product's photos AND all of its
+                  design pictures, so every design is visible right in the grid. */}
               <ProductImageCarousel
-                images={product.images}
+                images={product.image_urls || product.images}
                 productImage={product.image}
                 productName={product.name}
+                variantImages={collectVariantPictures(parsedVariants)}
               />
 
+              {/* Design Sub-Pictures Strip - one thumbnail per design picture */}
+              {parsedVariants.some((v) => getVariantImages(v).length > 0) && (
+                <div className="px-4 pt-3 space-y-1.5">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                    Designs ({parsedVariants.filter((v) => getVariantImages(v).length > 0).length})
+                  </p>
+                  <div className="flex gap-2 overflow-x-auto pb-0.5">
+                    {collectVariantPictures(parsedVariants).map((pic, picIdx) => {
+                      const design = parsedVariants.find((d) => d.name === pic.name);
+                      const designPics = getVariantImages(design);
+                      const picNo = designPics.indexOf(pic.image) + 1;
+                      return (
+                        <button
+                          key={`${pic.name}-${picIdx}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/products/${product.id}`);
+                          }}
+                          className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors"
+                          title={`${pic.name}${designPics.length > 1 ? ` (picture ${picNo} of ${designPics.length})` : ""}${design && design.stock <= 0 ? " (Out of stock)" : design ? ` - ${design.stock} left` : ""}`}
+                        >
+                          <img
+                            src={pic.image}
+                            alt={pic.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {/* Product Info */}
               <div className="p-4 space-y-4">
                 <div>
@@ -386,23 +341,55 @@ export default function Home() {
 
                 {/* Price and Action */}
                 <div className="flex items-center justify-between pt-2 border-t border-border">
-                  <p className="text-2xl font-bold text-accent">
-                    Rs {product.price}
-                  </p>
+                  <div>
+                    <p className="text-2xl font-bold text-accent">
+                      Rs {product.price}
+                    </p>
+                    <p
+                      className={`text-xs font-semibold ${
+                        isOutOfStock
+                          ? "text-red-400"
+                          : isLowStock
+                            ? "text-yellow-400"
+                            : "text-green-400"
+                      }`}
+                    >
+                      {isOutOfStock
+                        ? "Out of Stock"
+                        : hasVariants
+                          ? `${parsedVariants.length} designs available`
+                          : isLowStock
+                            ? `Only ${stockValue} left!`
+                            : "In Stock"}
+                    </p>
+                  </div>
                   <Button
                     size="sm"
+                    disabled={isOutOfStock}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleAddToCart(product);
                     }}
-                    className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                    className="bg-accent hover:bg-accent/90 text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={
+                      isOutOfStock
+                        ? "Out of stock"
+                        : hasVariants
+                          ? "Choose design"
+                          : "Add to cart"
+                    }
                   >
-                    <ShoppingCart className="w-4 h-4" />
+                    {hasVariants ? (
+                      <span className="text-xs font-bold px-1">Options</span>
+                    ) : (
+                      <ShoppingCart className="w-4 h-4" />
+                    )}
                   </Button>
                 </div>
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
         )}
       </section>
@@ -467,7 +454,7 @@ export default function Home() {
               <h4 className="font-bold text-foreground mb-4">Connect</h4>
               <div className="space-y-2 text-sm">
                 <a
-                  href="https://wa.me/1234567890"
+                  href="https://wa.me/923143131716"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-muted-foreground hover:text-accent transition-colors block"

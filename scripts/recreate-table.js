@@ -23,7 +23,7 @@ async function recreateTable() {
   console.log('2. Clearing cache...');
   try {
     await supabase.rpc('vacuum', {});
-  } catch (e) {
+  } catch {
     // Vacuum not available, skip
   }
   console.log('   ✓ Done');

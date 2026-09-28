@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerProducts, saveServerProducts, addServerProduct, deleteServerProduct } from '@/lib/server-products';
+import { getServerProducts, saveServerProducts, deleteServerProduct } from '@/lib/server-products';
 import { supabase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {

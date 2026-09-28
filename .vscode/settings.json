@@ -1,0 +1,43 @@
+{
+  // Use the TypeScript version pinned in package.json (5.7.3) instead of
+  // whatever VS Code ships with, so the Problems panel matches `npx tsc`.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // Tailwind CSS v4 syntax (@theme, @custom-variant, @apply, ...) is not part
+  // of the CSS spec, so the built-in CSS validator flags it as
+  // "Unknown at rule". It is valid for Tailwind/PostCSS - silence the noise.
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "less.lint.unknownAtRules": "ignore",
+
+  // Build output / generated route types should never show up as problems.
+  "search.exclude": {
+    "**/.next": true,
+    "**/tsconfig.tsbuildinfo": true
+  },
+  "files.watcherExclude": {
+    "**/.next/**": true
+  },
+
+  // --- Windows terminal: force UTF-8 ---------------------------------------
+  // The Windows console defaults to code page 437 (IBM437) with a us-ascii
+  // PowerShell output encoding, so the box-drawing / checkmark characters that
+  // Next.js, ESLint and Turbopack print come out as mojibake ("Compiled
+  // successfully" renders as "ΓûôCompiled successfully"). Switching the
+  // terminal to code page 65001 (UTF-8) makes all of that readable.
+  "files.encoding": "utf8",
+  "files.eol": "\n",
+  "terminal.integrated.defaultProfile.windows": "PowerShell (UTF-8)",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell (UTF-8)": {
+      "source": "PowerShell",
+      "icon": "terminal-powershell",
+      "args": [
+        "-NoExit",
+        "-Command",
+        "chcp 65001 > $null; [Console]::InputEncoding = [Text.Encoding]::UTF8; [Console]::OutputEncoding = [Text.Encoding]::UTF8; $OutputEncoding = [Text.Encoding]::UTF8"
+      ]
+    }
+  }
+}

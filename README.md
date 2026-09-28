@@ -11,8 +11,8 @@ chatbot assistant (HEROIX AI) that helps customers browse products, get
 personalized recommendations, and place orders through natural conversation.
 
 Target Market: Pakistan
-Payment Method: Cash on Delivery (COD)
-Shipping: Rs 250 Nationwide
+Payment Method: NayaPay only (Account Number: 03084824939, Account Name: Khawaja Aman Ali — WhatsApp +92 314 3131716). Orders are confirmed only after the payment is received.
+Shipping: Rs 280 Nationwide (delivery charge)
 
 ## TECHNOLOGY STACK
 
@@ -44,13 +44,16 @@ Charts: Recharts
    - Product catalog with category filtering (Anime, Superhero, Marvel,
      DC, Sports)
    - Product detail pages with image gallery/carousel
-   - Shopping cart (add, remove, update quantities)
+   - Multi-design products: every variant (e.g. Vegeta Base Form / Super
+     Saiyan / Super Saiyan Blue) has its OWN picture, optional description,
+     stock count and its own Add to Cart button - all at the same price
+   - Shopping cart (add, remove, update quantities, per variant)
    - Checkout flow with shipping form
    - Order management (create, view, update status, delete)
    - Product ratings and reviews display
 
-3. ADMIN DASHBOARD
-   - Secure admin authentication (email/password)
+3. ADMIN DASHBOARD (private)
+   - Hidden entry point + signed httpOnly session cookie (email/password)
    - Product management (add, edit, delete with image upload)
    - Order management (view, filter by status, update status, delete)
    - Real-time statistics and overview
@@ -66,6 +69,8 @@ Charts: Recharts
 
 Heroixweb/
 |
+|--proxy.ts Hides + protects the admin area (signed session check)
+|
 |--app/ Next.js App Router pages
 | |--api/ API routes
 | | |--chat/route.ts AI chatbot endpoint
@@ -73,12 +78,14 @@ Heroixweb/
 | | |--orders/route.ts Order management
 | | |--test-supabase/ Debug endpoints
 | |
-| |--admin/ Admin dashboard
+| |--admin/ Private admin dashboard (hidden - session required)
 | | |--orders/page.tsx Order management page
 | | |--products/page.tsx Product management page
-| | |--page.tsx Admin login/dashboard
+| | |--settings/page.tsx Store & chatbot settings
+| | |--layout.tsx Server-side session guard + admin navbar
+| | |--page.tsx Dashboard
 | |
-| |--auth/ Authentication pages
+| |--heroix-gate/ Secret owner sign-in page (never linked, noindex)
 | |--checkout/ Checkout flow
 | |--products/[id]/ Product detail pages
 | |--layout.tsx Root layout
@@ -97,7 +104,9 @@ Heroixweb/
 | |--supabase.ts Supabase client configuration
 | |--orders-store.ts Order CRUD operations
 | |--server-products.ts Server-side product operations
-| |--auth.ts Admin authentication logic
+| |--auth.ts Admin credential check (environment variables)
+| |--admin-session.ts Signed admin session token (HMAC-SHA256)
+| |--admin-guard.ts Server-side admin session guard for APIs
 | |--utils.ts Helper functions
 |
 |--data/ Local data storage
@@ -189,12 +198,23 @@ Response: { success: boolean }
 2. Install dependencies:
    npm install
 
-3. Set up environment variables:
-   Copy .env.example to .env.local and configure:
-   - SUPABASE_URL (your Supabase project URL)
-   - SUPABASE_ANON_KEY (Supabase anonymous key)
-   - OPENROUTER_API_KEY (OpenRouter API key for AI chatbot)
-   - ADMIN_EMAILS (comma-separated admin emails)
+3. Set up environment variables in .env.local:
+   Copy `.env.example` to `.env.local` and fill in the values:
+
+   | Variable | Required | Purpose |
+   | --- | --- | --- |
+   | `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL (inlined into the client bundle at build time) |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Supabase anon/publishable key (safe to expose) |
+   | `SUPABASE_SERVICE_KEY` | yes | Supabase **service role** key - server only, bypasses RLS. Used by the admin product APIs and image upload. Never prefix with `NEXT_PUBLIC_` |
+   | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | no | Server-side duplicates of the two values above. If omitted the `NEXT_PUBLIC_` pair is used automatically |
+   | `OPENROUTER_API_KEY` | yes | OpenRouter key for the AI chatbot. Without it the chat replies with canned fallbacks |
+   | `NEXT_PUBLIC_APP_URL` | no | Public origin, sent as the `HTTP-Referer` header to OpenRouter |
+   | `ADMIN_EMAIL` | yes | Email accepted by `/heroix-gate` |
+   | `ADMIN_EMAILS` | no | Extra admin emails, comma separated |
+   | `ADMIN_PASSWORD` | yes | Admin password - choose your own |
+   | `ADMIN_SESSION_SECRET` | yes | Random string (16+ chars) that signs the session cookie. If missing, the admin area fails closed and login reports the problem |
+
+   Restart the dev server after changing any of them.
 
 4. Set up Supabase database:
    - Create a new Supabase project at supabase.com
@@ -206,20 +226,121 @@ Response: { success: boolean }
 
 6. Access the application:
    - Store: http://localhost:3000
-   - Admin: http://localhost:3000/admin
+   - Private admin area: http://localhost:3000/heroix-gate (see below)
 
-## ADMIN CREDENTIALS
+## QUALITY CHECKS
 
-Default admin login:
-Email: admin@heroix.com
-Password: admin123
+Before pushing, run these - all three are expected to be silent/clean:
 
-Note: Update ADMIN_EMAILS environment variable to add more admin users.
+```bash
+npm run lint      # ESLint 9 + eslint-config-next (flat config: eslint.config.mjs)
+npx tsc --noEmit  # TypeScript, zero errors
+npm run build     # production build
+```
+
+Notes:
+- ESLint runs on `eslint.config.mjs`. Rules that conflict with the way this
+  codebase is written on purpose (`no-explicit-any`, `no-img-element`, the React
+  Compiler `react-hooks/purity` family) are switched off there with comments.
+- `npm run dev` writes its log to `.next/dev/logs/next-development.log`; a stale
+  error from an earlier edit can linger there, so restart the dev server if the
+  terminal still shows an old error.
+- On Windows the terminal is UTF-8 via `.vscode/settings.json`. If you use your
+  own PowerShell, run `chcp 65001` first, otherwise the build/lint output shows
+  mojibake instead of the ✓ / ○ characters.
+
+## DEPLOYING TO VERCEL
+
+The project is a standard Next.js 16 App Router app, so Vercel detects it
+automatically - there is no `vercel.json` to maintain. Only one manual step is
+needed: the environment variables.
+
+1. Import/connect the repository in Vercel and let the framework preset
+   "Next.js" be detected. Build command `npm run build`, install command
+   `npm install`, output directory: leave empty (Vercel handles `.next`).
+
+2. Add the environment variables under
+   **Project -> Settings -> Environment Variables** - the same set as the table
+   in "INSTALLATION & SETUP" above:
+
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_KEY`  <- mark as **Sensitive**
+   - `SUPABASE_URL`          <- optional duplicate
+   - `SUPABASE_ANON_KEY`     <- optional duplicate
+   - `OPENROUTER_API_KEY`    <- mark as **Sensitive**
+   - `NEXT_PUBLIC_APP_URL`   <- set to the production origin, e.g.
+     `https://your-app.vercel.app`
+   - `ADMIN_EMAIL`
+   - `ADMIN_EMAILS`          <- optional
+   - `ADMIN_PASSWORD`        <- mark as **Sensitive**
+   - `ADMIN_SESSION_SECRET`  <- mark as **Sensitive**, 16+ characters
+
+   Which environment to pick: for Preview, set them on **Preview**; for the
+   production deploy, set them on **Production**. Setting "All" is fine for a
+   single-developer deployment and avoids a broken preview build.
+
+3. Redeploy from the dashboard (or push again). Every push to `main` triggers a
+   new production deployment automatically.
+
+Important Vercel specifics:
+- The two `NEXT_PUBLIC_*` values are **inlined into the JavaScript bundle at
+  build time**. Changing them on Vercel requires a new build - a plain restart
+  is not enough. That is why they must exist when the build runs.
+- The admin area is guarded by `proxy.ts` and the session cookie, so after the
+  first Vercel deployment the `/admin` routes stay locked until
+  `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_SESSION_SECRET` are set. Without
+  `ADMIN_SESSION_SECRET` (16+ chars) login refuses to issue a cookie.
+- `SUPABASE_SERVICE_KEY` must be the **service role** key, not the anon key,
+  otherwise the admin product/image endpoints fail with a permission error.
+- If the terminal prints the wrong characters locally, that is a console code
+  page issue, not an app problem - see "QUALITY CHECKS".
+
+## PRIVATE ADMIN AREA
+
+The admin dashboard is hidden from customers:
+
+- No "Admin" link exists anywhere on the storefront.
+- /admin and /heroix-gate are excluded from search engines, and /admin sends
+  visitors back to the home page unless a valid signed session cookie is present
+  (so the admin area looks like it does not exist).
+- Sign in only through the private entry point: /heroix-gate
+- Sessions are HMAC-SHA256 signed, httpOnly cookies and expire after 12 hours.
+- Admin-only APIs (/api/admin-products, order status updates/deletes and the
+  debug endpoints) return 401 without a valid session.
+
+Credentials come from environment variables - never from the code:
+
+   ADMIN_EMAIL=you@example.com
+   ADMIN_PASSWORD=your-own-password
+   ADMIN_SESSION_SECRET=a-long-random-string
+
+Set these in .env.local (it is git-ignored), change the password to your own,
+then restart the dev server. If ADMIN_SESSION_SECRET is missing the admin area
+stays locked (fails closed) and the login endpoint reports it.
+
+## PRODUCT DESIGNS (VARIANTS) WITH THEIR OWN PICTURES
+
+A keychain can be sold in several designs. Admin -> Products -> edit a product
+-> "Variants / Designs with Stock", one design per line:
+
+    Vegeta Base Form: 5                                        <- design + stock
+    Vegeta Super Saiyan: 4 | image: https://.../ssj.png        <- + its own picture
+    Vegeta Super Saiyan Blue: 3 | image: https://.../blue.png | desc: Blue haired god form
+
+- Upload the picture for each design in the "Pictures & Descriptions for Each
+  Variant / Design" panel right below the variants box (it uploads to Supabase
+  storage and keeps the "| image: url" part in sync).
+- The description box under each design picture is stored as "| desc: ...".
+- All designs share the product price; each design keeps its own stock counter.
+- On the product page the customer gets a "Choose Your Design" gallery: one card
+  per design with its picture, description, stock pill and its own Add to Cart
+  button. Selecting a card switches the big product image to that design.
 
 ## SHIPPING & PAYMENT
 
-- Payment Method: Cash on Delivery (COD) only
-- Shipping Cost: Rs 250 per order (nationwide)
+- Payment Method: NayaPay only — Account Number 03084824939 (Account Name: Khawaja Aman Ali). HEROIX contacts the customer on WhatsApp (+92 314 3131716); an order is NOT confirmed until the payment is received, then it moves forward. No Cash on Delivery.
+- Shipping Cost: Rs 280 per order (nationwide delivery charge)
 - Product Price Range: Rs 450 - 750
 
 ## TROUBLESHOOTING

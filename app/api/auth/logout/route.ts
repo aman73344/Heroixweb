@@ -1,31 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { destroySession, getSession } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { ADMIN_COOKIE_NAME } from '@/lib/admin-session';
 
-export async function POST(request: NextRequest) {
-  try {
-    const sessionCookie = request.cookies.get('admin_session');
+export async function POST() {
+  const response = NextResponse.json({ success: true });
 
-    if (sessionCookie) {
-      destroySession(sessionCookie.value);
-    }
+  response.cookies.set(ADMIN_COOKIE_NAME, '', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 0,
+  });
 
-    const response = NextResponse.json(
-      { success: true },
-      { status: 200 }
-    );
-
-    // Clear session cookie
-    response.cookies.set('admin_session', '', {
-      maxAge: 0,
-      path: '/',
-    });
-
-    return response;
-  } catch (error) {
-    console.error('Logout error:', error);
-    return NextResponse.json(
-      { error: 'An error occurred' },
-      { status: 500 }
-    );
-  }
+  return response;
 }

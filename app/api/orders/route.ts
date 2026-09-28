@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOrders, addOrder, updateOrder, AdminOrder } from '@/lib/orders-store';
+import { verifyStockAvailability, decrementStockForOrder } from '@/lib/db';
+import { requireAdminApi } from '@/lib/admin-guard';
 
 interface OrderRequest {
   customer: string;
@@ -18,6 +20,10 @@ interface OrderRequest {
 }
 
 export async function GET(request: NextRequest) {
+  // Admin only - the storefront never needs the full order list.
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const orderId = searchParams.get('id');
@@ -84,13 +90,31 @@ export async function POST(request: NextRequest) {
       items: body.items.length,
       total: body.total,
       status: 'pending',
-      items_data: body.items.map(item => ({
+      items_data: body.items.map((item: any) => ({
         product: item.product || item.name || 'Unknown',
         productId: item.productId,
+        variant: item.variant || undefined,
         price: item.price,
         quantity: item.quantity,
       })),
     };
+
+    // Real stock counter - reject the order if the requested quantity
+    // exceeds what's actually in stock.
+    const stockProblems = await verifyStockAvailability(newOrder.items_data || []);
+    if (stockProblems.length > 0) {
+      const details = stockProblems
+        .map((p) =>
+          p.variant
+            ? `"${p.name} (${p.variant})" has ${p.available} left (you requested ${p.requested})`
+            : `"${p.name}" has ${p.available} left (you requested ${p.requested})`
+        )
+        .join('; ');
+      return NextResponse.json(
+        { success: false, error: `Insufficient stock: ${details}. Please adjust your cart.` },
+        { status: 409 }
+      );
+    }
 
     const saved = await addOrder(newOrder);
 
@@ -100,6 +124,9 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Real stock counter - reduce stock now that the order is saved.
+    await decrementStockForOrder(newOrder.items_data || []);
 
     return NextResponse.json(
       {
@@ -119,6 +146,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  // Admin only - customers cannot change order status.
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const orderId = searchParams.get('id');
@@ -163,6 +194,10 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  // Admin only - customers cannot delete orders.
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const orderId = searchParams.get('id');

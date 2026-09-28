@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateLLMResponse, ChatMessage } from '@/lib/llm';
 import { getServerProducts } from '@/lib/server-products';
 import { getOrders, addOrder, AdminOrder } from '@/lib/orders-store';
+import { verifyStockAvailability, decrementStockForOrder } from '@/lib/db';
+import { NAYAPAY_ACCOUNT_NAME, NAYAPAY_ACCOUNT_NUMBER, HEROIX_WHATSAPP_DISPLAY } from '@/lib/store-config';
 
 interface OrderItem {
   product: string;
@@ -30,6 +32,44 @@ const conversations = new Map<string, ChatMessage[]>();
 
 function generateSessionId(): string {
   return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// The in-progress order lives in memory, which is wiped whenever the server
+// restarts (including every dev hot-reload). Mirroring it into a cookie means a
+// customer never loses the order they just typed in and no order is dropped
+// half way through the flow.
+const CHAT_STATE_COOKIE = 'heroix_chat_state';
+
+function encodeChatState(state: SessionState): string {
+  try {
+    return encodeURIComponent(
+      JSON.stringify({ orderState: state.orderState, orderStep: state.orderStep })
+    );
+  } catch {
+    return '';
+  }
+}
+
+function parseChatState(value: string): SessionState | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && parsed.orderState && Array.isArray(parsed.orderState.items)) {
+      return { orderState: parsed.orderState, orderStep: parsed.orderStep } as SessionState;
+    }
+  } catch {
+    // ignore malformed state
+  }
+  return null;
+}
+
+function decodeChatState(raw?: string | null): SessionState | null {
+  if (!raw) return null;
+  try {
+    // Next decodes the cookie once, so try both the raw and the decoded value.
+    return parseChatState(decodeURIComponent(raw)) || parseChatState(raw);
+  } catch {
+    return parseChatState(raw);
+  }
 }
 
 const FALLBACK_PRODUCTS = [
@@ -65,10 +105,13 @@ async function getProductContext(): Promise<any[]> {
         category: p.category,
         price: p.price,
         description: p.description || p.name,
-        rating: p.rating || 4.5
+        rating: p.rating || 4.5,
+        ...(p.stock !== null && p.stock !== undefined
+          ? { stock: Number(p.stock) || 0 }
+          : {})
       }));
     }
-  } catch (error) {
+  } catch {
     console.warn('Using fallback products');
   }
   return FALLBACK_PRODUCTS;
@@ -98,7 +141,6 @@ function findProductsInMessage(
   
   const validProducts = products.filter(p => p && p.name && typeof p.name === 'string');
   
-  const orderIntent = /order|buy|chahiye|bhej|mangta|chaiye|lagana/i.test(lower);
   const onlyThesePatterns = /only these|just these|only this|only these ones|bas yeh|bas yehi|sirf yeh|only want|only these 3|these three|these ones/i;
   
   if (onlyThesePatterns.test(lower) && sessionState?.mentionedProducts?.length) {
@@ -219,8 +261,7 @@ function extractQuantitiesForProducts(
   productNames: string[]
 ): Map<string, number> {
   const quantities = new Map<string, number>();
-  const lower = userMessage.toLowerCase();
-  
+
   for (const name of productNames) {
     const nameLower = name.toLowerCase();
     const patterns = [
@@ -306,7 +347,7 @@ function extractAddress(userMessage: string): string | undefined {
 
 function formatOrderSummary(
   orderState: SessionState['orderState'],
-  shipping: number = 250
+  shipping: number = 280
 ): { text: string; subtotal: number; total: number } {
   let subtotal = 0;
   let itemsText = '';
@@ -319,7 +360,7 @@ function formatOrderSummary(
   
   const total = subtotal + shipping;
   
-  const text = `📋 Order Summary:\n\n${itemsText}• Shipping = Rs ${shipping}\n• Total = Rs ${total}\n\n📍 Delivery to:\n${orderState.name || 'N/A'}\n${orderState.city || 'N/A'}\n${orderState.address || 'N/A'}\n📱 Phone: ${orderState.phone || 'N/A'}\n\nReply "yes" to confirm or "cancel" to start over.`;
+  const text = `📋 Order Summary:\n\n${itemsText}• Shipping = Rs ${shipping}\n• Total = Rs ${total}\n\n💳 Payment: NayaPay only\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order will NOT be confirmed without payment. Pay the advance on NayaPay and send the screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}) — once the payment is received your order is confirmed and moves forward.\n\n📍 Delivery to:\n${orderState.name || 'N/A'}\n${orderState.city || 'N/A'}\n${orderState.address || 'N/A'}\n📱 Phone: ${orderState.phone || 'N/A'}\n\nReply "yes" to confirm or "cancel" to start over.`;
   
   return { text, subtotal, total };
 }
@@ -348,7 +389,7 @@ async function handleOrderFlow(
       totalItems += item.quantity;
       subtotal += item.price * item.quantity;
     }
-    const shipping = 250;
+    const shipping = 280;
     const total = subtotal + shipping;
     
     const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown'}`).join(', ');
@@ -382,6 +423,19 @@ async function handleOrderFlow(
       counter++;
       orderId = `ORD-${Date.now().toString().slice(-6)}${counter}`;
     }
+
+    // Real stock counter - stop the order if something is out of stock.
+    const stockProblems = await verifyStockAvailability(orderState.items);
+    if (stockProblems.length > 0) {
+      const details = stockProblems
+        .map(p =>
+          p.variant
+            ? `"${p.name} (${p.variant})" has ${p.available} left (you asked for ${p.requested})`
+            : `"${p.name}" has ${p.available} left (you asked for ${p.requested})`
+        )
+        .join('; ');
+      return `⚠️ Sorry, insufficient stock: ${details}.\n\nPlease reduce the quantity or choose another keychain, then reply "yes" to confirm again.`;
+    }
     
     const newOrder: AdminOrder = {
       id: orderId,
@@ -402,13 +456,24 @@ async function handleOrderFlow(
       })),
     };
     
-    const saved = await addOrder(newOrder);
-    
+    let saved = await addOrder(newOrder);
+
     if (!saved) {
-      return `⚠️ There was an issue saving your order. Please try again or contact support.\n\nOrder details:\n📦 ${itemsList}\n💰 Total: Rs ${total}`;
+      // One retry - a transient Supabase/network hiccup must not lose an order.
+      saved = await addOrder(newOrder);
     }
+
+    if (!saved) {
+      console.error('Chat order could NOT be saved:', newOrder.id, newOrder.customer, newOrder.phone);
+      return `⚠️ There was an issue saving your order. Please try again or contact support on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}).\n\nOrder details:\n📦 ${itemsList}\n💰 Total: Rs ${total}`;
+    }
+
+    console.log('Chat order saved:', newOrder.id, '| customer:', newOrder.customer, '| phone:', newOrder.phone, '| total: Rs', total);
+
+    // Real stock counter - reduce stock now that the order is saved.
+    await decrementStockForOrder(newOrder.items_data || []);
     
-    return `🎉 Order confirmed!\n\n📦 Order: ${itemsList}\n💰 Total: Rs ${total}\n📍 Delivery to: ${orderState.city}\n\n🆔 Order ID: ${newOrder.id}\n\nYou'll receive a confirmation call shortly. Thanks for shopping with HEROIX!`;
+    return `🎉 Order received!\n\n📦 Order: ${itemsList}\n💰 Total: Rs ${total}\n📍 Delivery to: ${orderState.city}\n\n🆔 Order ID: ${newOrder.id}\n\n💳 Payment: NayaPay only\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order is NOT confirmed yet — without payment the order will not move forward. Send your payment screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}); once we receive your NayaPay payment we will confirm your order on WhatsApp and it will move forward.\n\nThanks for shopping with HEROIX!`;
   }
   
   const onlyThesePatterns = /only these|just these|only these 3|only this|only these ones|bas yeh|bas yehi|sirf yeh|only want these|only these ones|these three|these ones/i;
@@ -631,10 +696,7 @@ async function handleOrderFlow(
           if (itemsNeedingQty.length > 0) {
             const nextItem = itemsNeedingQty[0];
             sessionState.orderStep = `qty_${nextItem.product.split(' ')[0].toLowerCase()}`;
-            
-            const itemsWithQty = orderState.items.filter(i => i.quantity > 0);
-            const soFar = itemsWithQty.map(i => `${i.quantity}x ${i.product}`).join(', ');
-            
+
             return `Got it! ${qty}x ${item.product}. Now how many ${nextItem.product}?`;
           }
           
@@ -754,10 +816,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No messages provided' }, { status: 400 });
     }
 
-    let sessionId = clientSessionId || generateSessionId();
+    const sessionId = clientSessionId || generateSessionId();
     const sessionState = getOrCreateSession(sessionId);
+
+    // Restore an order that was in progress before the server restarted, so the
+    // customer does not have to type their details (or the order) again.
+    const cookieState = decodeChatState(request.cookies.get(CHAT_STATE_COOKIE)?.value);
+    if (
+      cookieState &&
+      cookieState.orderState.items.length > 0 &&
+      sessionState.orderState.items.length === 0 &&
+      !sessionState.orderStep
+    ) {
+      sessionState.orderState = cookieState.orderState;
+      sessionState.orderStep = cookieState.orderStep;
+    }
     
-    let conversationHistory = conversations.get(sessionId) || [];
+    const conversationHistory = conversations.get(sessionId) || [];
     const userMessage = messages[messages.length - 1];
     
     if (userMessage.role === 'user') {
@@ -810,10 +885,23 @@ export async function POST(request: NextRequest) {
     });
     conversations.set(sessionId, conversationHistory.slice(-20));
 
-    return NextResponse.json({
+    const chatResponse = NextResponse.json({
       message: response,
       sessionId: sessionId,
     });
+
+    // Persist the in-progress order so a restart/hot-reload cannot drop it.
+    chatResponse.cookies.set({
+      name: CHAT_STATE_COOKIE,
+      value: encodeChatState(sessionState),
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 60 * 60 * 24,
+    });
+
+    return chatResponse;
   } catch (error) {
     console.error('Chat API Error:', error);
     return NextResponse.json(

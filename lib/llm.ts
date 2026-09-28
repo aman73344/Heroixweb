@@ -1,6 +1,9 @@
 // OpenRouter LLM Integration for Heroix AI Sales Assistant
 // Properly calls OpenRouter API for natural AI responses
 
+import { NAYAPAY_ACCOUNT_NAME, NAYAPAY_ACCOUNT_NUMBER, HEROIX_WHATSAPP_DISPLAY } from './store-config';
+import { parseVariants } from './variants';
+
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 interface Product {
@@ -12,6 +15,8 @@ interface Product {
   rating?: number;
   reviews?: number;
   inStock?: boolean;
+  stock?: number;
+  variants?: any[];
 }
 
 interface OpenRouterChoice {
@@ -33,13 +38,29 @@ const SYSTEM_PROMPT_TEMPLATE = (products: Product[], sessionContext?: any) => `Y
 
 STORE INFO:
 - We sell Anime, Superhero, Marvel, DC, and Sports keychains
-- Prices: Rs 450-750 (cash on delivery)
-- Shipping: Rs 250 nationwide (5-7 days)
+- Prices: Rs 450-750
+- Shipping: Rs 280 delivery charge nationwide (5-7 days)
+- Payment: NayaPay ONLY - NO Cash on Delivery, no SadaPay/Easypaisa/JazzCash/bank transfer
+- NayaPay account number: ${NAYAPAY_ACCOUNT_NUMBER} (account name: ${NAYAPAY_ACCOUNT_NAME})
+- After a customer places an order we contact them on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}); the order is NOT confirmed until the NayaPay payment is received. Once the payment screenshot arrives on WhatsApp, the order is confirmed and moves forward.
 - Based in Pakistan
 
 PRODUCT CATALOG (CRITICAL - Use exact names):
 ${products.length > 0 
-  ? products.map(p => `- "${p.name}" (${p.category}): Rs ${p.price} - ${p.description || 'Premium quality keychain'}`).join('\n')
+  ? products.map(p => {
+      let variantStockStr = '';
+      if (p.variants && Array.isArray(p.variants) && p.variants.length > 0) {
+        // Render only the design names + stock (never the stored picture URLs or
+        // "desc:" attributes) so the prompt stays clean.
+        const parsedVariants = parseVariants(p.variants, typeof p.stock === 'number' ? p.stock : 0);
+        if (parsedVariants.length > 0) {
+          variantStockStr = ` [designs: ${parsedVariants
+            .map((v) => `${v.name} (stock ${v.stock})`)
+            .join(', ')}]`;
+        }
+      }
+      return `- "${p.name}" (${p.category}): Rs ${p.price} - ${p.description || 'Premium quality keychain'}${typeof p.stock === 'number' ? (p.stock > 0 ? ` [stock: ${p.stock}]` : ' [OUT OF STOCK - stock: 0]') : ''}${variantStockStr}`;
+    }).join('\n')
   : 'No products currently available'
 }
 
@@ -79,6 +100,15 @@ When customer wants to order:
 5. Ask for city
 6. Ask for full address
 7. Confirm order with summary and ask "Reply yes to confirm"
+8. Remind them: payment is NayaPay ONLY (account number ${NAYAPAY_ACCOUNT_NUMBER} - ${NAYAPAY_ACCOUNT_NAME}); we WhatsApp them on (${HEROIX_WHATSAPP_DISPLAY}) and the order is confirmed ONLY after the NayaPay payment is received - without payment the order does not move forward
+
+PAYMENT QUESTIONS:
+- If asked about payment / COD / cash on delivery / easypaisa / jazzcash / bank: we take NayaPay ONLY (account number ${NAYAPAY_ACCOUNT_NUMBER}, account name ${NAYAPAY_ACCOUNT_NAME}), coordinated over WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Never say Cash on Delivery is available and never offer SadaPay, Easypaisa, JazzCash or bank transfer. The order is not confirmed until the payment is received.
+
+STOCK (REAL-TIME):
+- The catalog shows [stock: N] per product - this is the REAL stock count and it drops with every order.
+- If a product shows [OUT OF STOCK - stock: 0], say it is unavailable and suggest 1-2 similar in-stock products instead.
+- If asked whether something is in stock, answer using its stock number. NEVER say "everything is in stock" or "all items ready to ship" when some products are out of stock.
 
 RULES:
 - Keep responses SHORT (1-2 sentences max for casual chat)
@@ -101,7 +131,6 @@ export async function generateLLMResponse(
   const apiKey = process.env.OPENROUTER_API_KEY;
   
   if (!apiKey) {
-    console.log('No API key, using fallback');
     return generateEnhancedFallbackResponse(messages, products, sessionContext);
   }
 
@@ -141,7 +170,7 @@ export async function generateLLMResponse(
         const data: OpenRouterResponse = await response.json();
         
         if (data.error) {
-          console.log(`Model ${model} error:`, data.error.message);
+          console.warn(`Model ${model} error:`, data.error.message);
           continue;
         }
         
@@ -155,19 +184,17 @@ export async function generateLLMResponse(
         }
         
         if (content && content.length > 5) {
-          console.log(`Using model: ${model}`);
           return content;
         }
       } else {
         const errorText = await response.text();
-        console.log(`Model ${model} failed:`, response.status, errorText.substring(0, 200));
+        console.warn(`Model ${model} failed:`, response.status, errorText.substring(0, 200));
       }
     } catch (error: any) {
-      console.log(`Model ${model} exception:`, error.message);
+      console.warn(`Model ${model} exception:`, error.message);
     }
   }
-  
-  console.log('All LLM models failed, using fallback');
+
   return generateEnhancedFallbackResponse(messages, products, sessionContext);
 }
 
@@ -180,15 +207,6 @@ function generateEnhancedFallbackResponse(
   const fullMessage = messages[messages.length - 1]?.content || '';
   
   const validProducts = Array.isArray(products) && products.length > 0 ? products : [];
-  
-  const findProductsByName = (searchTerm: string) => {
-    if (!searchTerm || validProducts.length === 0) return [];
-    const term = searchTerm.toLowerCase();
-    return validProducts.filter(p => {
-      const nameLower = p.name.toLowerCase();
-      return nameLower.includes(term) || term.includes(nameLower);
-    });
-  };
   
   const disambiguateProducts = (matches: Product[]): string | null => {
     if (matches.length === 0) return null;
@@ -249,7 +267,7 @@ function generateEnhancedFallbackResponse(
   }
   
   if (/order|buy|chahiye|mangta|leni|chaiye|bhej|bhejna|lagana|order karna|order krna/i.test(lastMessage)) {
-    let matchedProducts: Product[] = [];
+    const matchedProducts: Product[] = [];
     
     for (const product of validProducts) {
       const nameWords = product.name.toLowerCase().split(/\s+/);
@@ -359,18 +377,28 @@ function generateEnhancedFallbackResponse(
   }
   
   if (/shipping|delivery|delivery time|kitne din|bhejna|deliver|charge/i.test(lastMessage)) {
-    return "Shipping is just Rs 250 anywhere in Pakistan! 🚚 Delivery takes 5-7 working days. Cash on delivery!";
+    return `Shipping is just Rs 280 anywhere in Pakistan! 🚚 Delivery takes 5-7 working days. Payment is NayaPay only (account number ${NAYAPAY_ACCOUNT_NUMBER} - ${NAYAPAY_ACCOUNT_NAME}) - no Cash on Delivery.`;
   }
   
   if (/stock|available|in stock|out of stock|hazir|h/i.test(lastMessage)) {
+    const withStock = validProducts.filter(p => typeof p.stock === 'number');
+    if (withStock.length > 0) {
+      const inStock = withStock.filter(p => (p.stock as number) > 0);
+      const out = withStock.filter(p => (p.stock as number) <= 0);
+      if (inStock.length === 0) {
+        return "All items are currently out of stock 😔. Message us on WhatsApp (03143131716) and we'll let you know as soon as they're back!";
+      }
+      const outNames = out.slice(0, 3).map(p => p.name).join(', ');
+      return `We have ${inStock.length} keychains in stock ✅${out.length > 0 ? `. Currently out of stock: ${outNames}` : ''}. Want to see some options?`;
+    }
     if (validProducts.length > 0) {
-      return `Yes! We have ${validProducts.length} products in stock. ✅ All items ready to ship!`;
+      return `Yes! We have ${validProducts.length} products available. ✅`;
     }
     return "Most items are in stock!";
   }
   
-  if (/payment|pay|cash on delivery|cod|easypaisa|jazzcash|bank/i.test(lastMessage)) {
-    return "We accept Cash on Delivery (COD) 💵 - pay when you receive! Bank transfer, JazzCash and EasyPaisa also available.";
+  if (/payment|pay|advance|cash on delivery|cod|easypaisa|jazzcash|nayapay|sadapay|screenshot|transfer|bank/i.test(lastMessage)) {
+    return `We take payments on NayaPay only 💳 - NayaPay account number ${NAYAPAY_ACCOUNT_NUMBER} (account name ${NAYAPAY_ACCOUNT_NAME}). After you place the order we contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Your order is NOT confirmed until the payment is received - send the payment screenshot on WhatsApp and your order is confirmed and moves forward. No Cash on Delivery.`;
   }
   
   if (/recommend|suggest|best|top|popular|acha|best choice|khush|recommendation|btiye|dikhao/i.test(lastMessage)) {

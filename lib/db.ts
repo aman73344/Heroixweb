@@ -1,5 +1,9 @@
 import { supabase } from './supabase';
+import { splitVariantImageSuffix, parseVariants, formatVariantsForStorage } from './variants';
 
+// Kept as an offline reference of the original seed catalogue. Supabase is the
+// live source of truth, so this list is intentionally not used at runtime.
+/* eslint-disable @typescript-eslint/no-unused-vars */
 const DEFAULT_PRODUCTS = [
   { id: 'neon-genesis', name: 'Neon Genesis Evangelion', description: 'Classic mecha anime keychain with iconic EVA Unit design', price: 599, category: 'Anime', image: '/placeholder.jpg', images: ['/placeholder.jpg'], inStock: true, rating: 4.8, reviews: 342, stock: 50, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
   { id: 'attack-titan', name: 'Attack on Titan', description: 'Dynamic action keychain featuring the Scout Regiment emblem', price: 549, category: 'Anime', image: '/placeholder.jpg', images: ['/placeholder.jpg'], inStock: true, rating: 4.9, reviews: 567, stock: 75, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
@@ -20,15 +24,48 @@ const DEFAULT_PRODUCTS = [
   { id: 'football-trophy', name: 'Football Trophy', description: 'Golden football trophy keychain for sports enthusiasts', price: 449, category: 'Sports', image: '/placeholder.jpg', images: ['/placeholder.jpg'], inStock: true, rating: 4.5, reviews: 178, stock: 50, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
 ];
 
-let productsInitialized = false;
-
 export async function getProducts(): Promise<any[]> {
   try {
-    const { data, error } = await (supabase as any)
-      .from('products')
-      .select('id, name, category, price, stock, description, image, image_urls, rating, reviews')
-      .limit(50);
-    
+    // features/variants are optional columns added by
+    // scripts/add-features-column.sql - skip any that don't exist yet so the
+    // store keeps working before the script has been run.
+    const OPTIONAL_COLUMNS = ['features', 'variants'];
+    const BASE_COLUMNS = [
+      'id', 'name', 'category', 'price', 'stock', 'description',
+      'image', 'image_urls', 'rating', 'reviews',
+    ];
+    let selectedOptional = [...OPTIONAL_COLUMNS];
+    let data: any = null;
+    let error: any = null;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const columns = [...BASE_COLUMNS, ...selectedOptional].join(', ');
+      ({ data, error } = await (supabase as any)
+        .from('products')
+        .select(columns)
+        .limit(50));
+
+      if (!error || (error as any).code !== '42703') break;
+
+      const match =
+        (error as any).message.match(/column\s+([\w.]+)\s+does not exist/) ||
+        (error as any).message.match(/column "([^"]+)"/);
+      const missing = match?.[1]?.split('.').pop();
+
+      if (missing && selectedOptional.includes(missing)) {
+        selectedOptional = selectedOptional.filter((c) => c !== missing);
+        continue;
+      }
+
+      if (attempt === 0) {
+        // Couldn't identify the column - drop all optional columns and retry
+        selectedOptional = [];
+        continue;
+      }
+
+      break;
+    }
+
     if (error) {
       console.error('Supabase error:', error);
       return [];
@@ -247,7 +284,8 @@ export async function getOrders(): Promise<Order[]> {
 
 export async function addOrderToSupabase(order: Order): Promise<boolean> {
   try {
-    const { data, error } = await supabase
+    // Same untyped-client cast as the product writes above.
+    const { error } = await (supabase as any)
       .from('orders')
       .insert([{
         id: order.id,
@@ -267,7 +305,7 @@ export async function addOrderToSupabase(order: Order): Promise<boolean> {
       .single();
 
     if (error) {
-      console.error('Supabase order insert error:', error.message, error.code, error.status);
+      console.error('Supabase order insert error:', error.message, error.code);
       return false;
     }
     
@@ -280,7 +318,7 @@ export async function addOrderToSupabase(order: Order): Promise<boolean> {
 
 export async function updateOrderInSupabase(orderId: string, updates: Partial<Order>): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('orders')
       .update(updates)
       .eq('id', orderId);
@@ -311,5 +349,177 @@ export async function deleteOrderFromSupabase(orderId: string): Promise<boolean>
   } catch (error) {
     console.error('Error deleting order:', error);
     return false;
+  }
+}
+
+export interface StockProblem {
+  productId: string;
+  name: string;
+  variant?: string;
+  requested: number;
+  available: number;
+}
+
+// Real stock counter: verify every ordered item has enough stock in the
+// database before the order is saved, accounting for specific variants if selected.
+// Fails open on DB errors so a flaky connection never blocks orders.
+export async function verifyStockAvailability(
+  items: { productId?: string; variant?: string; quantity: number }[],
+): Promise<StockProblem[]> {
+  const problems: StockProblem[] = [];
+  try {
+    const ids = [
+      ...new Set(items.map((i) => i.productId).filter(Boolean)),
+    ] as string[];
+    if (ids.length === 0) return problems;
+
+    const { data, error } = await (supabase as any)
+      .from('products')
+      .select('id, name, stock, variants')
+      .in('id', ids);
+
+    if (error || !data) {
+      console.error('Stock check error:', error);
+      return problems;
+    }
+
+    const productById = new Map<string, any>(
+      data.map((p: any) => [p.id, p]),
+    );
+
+    // Group requested quantities by productId and variant
+    const requestedKeyMap = new Map<string, { productId: string; variant?: string; quantity: number }>();
+    for (const item of items) {
+      if (!item.productId) continue;
+      const key = `${item.productId}:::${(item.variant || '').trim().toLowerCase()}`;
+      const existing = requestedKeyMap.get(key);
+      if (existing) {
+        existing.quantity += item.quantity || 0;
+      } else {
+        requestedKeyMap.set(key, {
+          productId: item.productId,
+          variant: item.variant?.trim() || undefined,
+          quantity: item.quantity || 0,
+        });
+      }
+    }
+
+    for (const req of requestedKeyMap.values()) {
+      const product = productById.get(req.productId);
+      if (!product) continue;
+
+      const baseStock = Number(product.stock) || 0;
+      let variantStock: number | null = null;
+      let matchedVariantName = req.variant;
+
+      if (req.variant && product.variants && Array.isArray(product.variants)) {
+        // Find matching variant
+        for (const rawV of product.variants) {
+          let str = typeof rawV === 'string' ? rawV : (rawV?.name || '');
+          // Ignore an optional "| image: url" picture suffix when matching names
+          str = splitVariantImageSuffix(str).main;
+
+          const match = str.match(/^(.+?)\s*[:=]\s*(\d+)\s*$/) ||
+                        str.match(/^(.+?)\s+-\s+(\d+)\s*$/) ||
+                        str.match(/^(.+?)\s*\(\s*(?:stock\s*:\s*)?(\d+)(?:\s*left)?\s*\)\s*$/i);
+          let vName = str;
+          let vStock = baseStock;
+          if (match) {
+            vName = match[1].trim();
+            vStock = parseInt(match[2], 10);
+          } else if (typeof rawV === 'object' && rawV?.stock !== undefined) {
+            vStock = Number(rawV.stock) || 0;
+          }
+          if (vName.toLowerCase() === req.variant.toLowerCase()) {
+            variantStock = vStock;
+            matchedVariantName = vName;
+            break;
+          }
+        }
+      }
+
+      const available = variantStock !== null ? variantStock : baseStock;
+      if (req.quantity > available) {
+        problems.push({
+          productId: req.productId,
+          name: product.name,
+          variant: matchedVariantName,
+          requested: req.quantity,
+          available,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error verifying stock:', error);
+  }
+  return problems;
+}
+
+// Real stock counter: reduce stock after an order is saved (never below 0).
+// If a variant is specified, decrements that variant's stock count as well
+// as the product's overall stock count.
+export async function decrementStock(
+  productId: string,
+  quantity: number,
+  variantName?: string,
+): Promise<void> {
+  try {
+    if (!productId || quantity <= 0) return;
+
+    const { data, error } = await (supabase as any)
+      .from('products')
+      .select('stock, variants')
+      .eq('id', productId)
+      .single();
+
+    if (error || !data) {
+      console.error('Stock fetch error:', error);
+      return;
+    }
+
+    const currentBase = Number(data.stock) || 0;
+    const nextBase = Math.max(0, currentBase - quantity);
+    const updatePayload: Record<string, any> = {
+      stock: nextBase,
+      updated_at: new Date().toISOString(),
+    };
+
+    // If product has variants and a variant was purchased, update variant stock.
+    // parseVariants/formatVariantsForStorage are used so the design's picture AND
+    // description are preserved while only the stock number changes.
+    if (variantName && data.variants && Array.isArray(data.variants) && data.variants.length > 0) {
+      const parsedVariants = parseVariants(data.variants, currentBase);
+      let stockChanged = false;
+
+      const updatedVariants = parsedVariants.map((v) => {
+        if (v.name.toLowerCase() === variantName.trim().toLowerCase()) {
+          stockChanged = true;
+          return { ...v, stock: Math.max(0, v.stock - quantity) };
+        }
+        return v;
+      });
+
+      if (stockChanged) {
+        updatePayload.variants = formatVariantsForStorage(updatedVariants);
+      }
+    }
+
+    const { error: updateError } = await (supabase as any)
+      .from('products')
+      .update(updatePayload)
+      .eq('id', productId);
+
+    if (updateError) console.error('Stock decrement error:', updateError);
+  } catch (error) {
+    console.error('Error decrementing stock:', error);
+  }
+}
+
+// Reduce stock for every item of a saved order.
+export async function decrementStockForOrder(
+  items: { productId?: string; variant?: string; quantity: number }[],
+): Promise<void> {
+  for (const item of items) {
+    await decrementStock(item.productId || '', item.quantity || 0, item.variant);
   }
 }

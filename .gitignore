@@ -13,4 +13,19 @@ next.user-config.*
 # Common ignores
 node_modules
 .next/
-.DS_Storedata/
+.DS_Store
+data/
+
+# TypeScript incremental build cache (was accidentally committed)
+*.tsbuildinfo
+
+# Local scratch files (tmp scripts, logs, compiled test output)
+tmp-*
+temp.txt
+
+# Keep npm as the single source of truth: committing a second lockfile
+# (pnpm-lock.yaml / yarn.lock) makes Vercel pick a different package manager
+# than the one used locally, which silently installs a different tree.
+pnpm-lock.yaml
+yarn.lock
+

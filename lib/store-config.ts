@@ -44,6 +44,26 @@ export interface FAQ {
   keywords: string[];
 }
 
+// ===== Payment details (single source of truth) =====
+// HEROIX takes payments on NayaPay ONLY. An order is NOT confirmed until the
+// payment has actually been received - our team contacts every customer on the
+// official HEROIX WhatsApp number and confirms the order there.
+export const NAYAPAY_ACCOUNT_NAME = 'Khawaja Aman Ali';
+export const NAYAPAY_ACCOUNT_NUMBER = '03084824939';
+export const HEROIX_WHATSAPP_DISPLAY = '+92 314 3131716';
+export const HEROIX_WHATSAPP_LOCAL = '0314-3131716';
+export const HEROIX_WHATSAPP_LINK = 'https://wa.me/923143131716';
+
+// Short one-liner used in chats/UI
+export function getPaymentInfo(): string {
+  return `💳 NayaPay only — Account Number: ${NAYAPAY_ACCOUNT_NUMBER} | Account Name: ${NAYAPAY_ACCOUNT_NAME}`;
+}
+
+// The "order will not move without payment" notice
+export function getOrderConfirmationNote(): string {
+  return `⚠️ Your order is NOT confirmed until the payment is received. We will contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}) — once your NayaPay payment is received, your order is confirmed and moves forward.`;
+}
+
 // Default store configuration
 export const defaultStoreConfig: StoreConfig = {
   store: {
@@ -53,25 +73,25 @@ export const defaultStoreConfig: StoreConfig = {
   },
   shipping: {
     coverage: ['Karachi', 'Lahore', 'Islamabad', 'Multan', 'Peshawar', 'Quetta', 'All Pakistan'],
-    baseCost: 250,
+    baseCost: 280,
     deliveryDays: '5-7 business days',
     freeShippingAbove: 2000,
   },
   payment: {
-    methods: ['Cash on Delivery', 'Bank Transfer', 'JazzCash', 'EasyPaisa'],
+    methods: ['NayaPay'],
     currencyCode: 'PKR',
     currencySymbol: 'Rs',
   },
   policies: {
-    returnDays: 7,
-    exchangeDays: 10,
-    description: 'Items can be returned within 7 days if unused. Exchanges available within 10 days.',
+    returnDays: 0,
+    exchangeDays: 0,
+    description: 'No free returns. Please review product details carefully before ordering, or ask us on WhatsApp (03143131716) first.',
   },
   contact: {
-    whatsapp: '+923001234567',
+    whatsapp: '+923143131716',
     instagram: '@heroix.keychains',
     email: 'hello@heroix.com',
-    phone: '0300-1234567',
+    phone: '0314-3131716',
   },
   features: {
     customOrdersAvailable: true,
@@ -81,9 +101,9 @@ export const defaultStoreConfig: StoreConfig = {
     {
       id: 'faq-1',
       question: 'How much does shipping cost?',
-      answer: 'Shipping cost is Rs 250 for all orders within Pakistan. Free shipping on orders above Rs 2000.',
+      answer: 'Shipping (delivery charge) is Rs 280 for all orders within Pakistan.',
       category: 'shipping',
-      keywords: ['shipping', 'cost', 'price', 'delivery charge', 'postage'],
+      keywords: ['shipping', 'cost', 'price', 'delivery charge', 'postage', 'dc'],
     },
     {
       id: 'faq-2',
@@ -95,21 +115,21 @@ export const defaultStoreConfig: StoreConfig = {
     {
       id: 'faq-3',
       question: 'What payment methods do you accept?',
-      answer: 'We accept Cash on Delivery, Bank Transfer, JazzCash, and EasyPaisa. Choose your preferred method at checkout.',
+      answer: `We take payments on NayaPay only (no Cash on Delivery). NayaPay account number ${NAYAPAY_ACCOUNT_NUMBER} — account name ${NAYAPAY_ACCOUNT_NAME}. After you place the order we contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Your order is NOT confirmed until the payment is received — send the payment screenshot on WhatsApp and your order is confirmed and moves forward.`,
       category: 'payment',
-      keywords: ['payment', 'pay', 'method', 'card', 'bank', 'cash'],
+      keywords: ['payment', 'pay', 'method', 'advance', 'nayapay', 'sadapay', 'online', 'transfer', 'screenshot', 'cash', 'account number', 'account name'],
     },
     {
       id: 'faq-4',
       question: 'Can I return or exchange a product?',
-      answer: 'Yes! You can return items within 7 days if unused, or exchange within 10 days. Contact us with your order ID.',
+      answer: 'We do not offer free returns. Please review the product details carefully before ordering, or ask us on WhatsApp (03143131716) - we are happy to help before you buy.',
       category: 'returns',
       keywords: ['return', 'exchange', 'refund', 'money back', 'wrong item'],
     },
     {
       id: 'faq-5',
       question: 'Do you offer custom keychains?',
-      answer: 'Yes, we offer custom keychain orders! Contact us on WhatsApp (+923001234567) to discuss your design.',
+      answer: 'Yes, we offer custom keychain orders! Contact us on WhatsApp (03143131716) to discuss your design.',
       category: 'products',
       keywords: ['custom', 'personalized', 'make', 'design', 'bespoke'],
     },
@@ -144,7 +164,7 @@ export const defaultStoreConfig: StoreConfig = {
     {
       id: 'faq-10',
       question: 'How do I contact customer support?',
-      answer: 'You can reach us via WhatsApp (+923001234567), Instagram (@heroix.keychains), email (hello@heroix.com), or phone (0300-1234567).',
+      answer: 'You can reach us via WhatsApp (03143131716), Instagram (@heroix.keychains), email (hello@heroix.com), or phone (0314-3131716).',
       category: 'general',
       keywords: ['contact', 'support', 'help', 'email', 'phone', 'whatsapp'],
     },
@@ -164,9 +184,9 @@ export function updateStoreConfig(config: Partial<StoreConfig>): StoreConfig {
 }
 
 export function getShippingInfo(): string {
-  const { baseCost, deliveryDays, freeShippingAbove } = storeConfig.shipping;
+  const { baseCost, deliveryDays } = storeConfig.shipping;
   const { currencySymbol } = storeConfig.payment;
-  return `${currencySymbol} ${baseCost} (${deliveryDays}). Free shipping on orders above ${currencySymbol} ${freeShippingAbove}.`;
+  return `${currencySymbol} ${baseCost} delivery charge (${deliveryDays}) across Pakistan. Payment is NayaPay only (${NAYAPAY_ACCOUNT_NUMBER} - ${NAYAPAY_ACCOUNT_NAME}) - no Cash on Delivery.`;
 }
 
 export function getFAQs(category?: string): FAQ[] {

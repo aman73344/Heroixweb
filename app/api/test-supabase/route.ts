@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { addOrderToSupabase } from '@/lib/db';
+import { requireAdminApi } from '@/lib/admin-guard';
 
+// Admin only - this debug endpoint writes test data.
 export async function GET() {
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
+
   try {
     // Test 1: Check Supabase connection
-    const { data: testData, error: testError } = await supabase
+    const { error: testError } = await supabase
       .from('products')
       .select('count')
       .single();
@@ -34,7 +38,7 @@ export async function GET() {
       items_data: [{ productId: 'test', name: 'Test Product', price: 500, quantity: 1 }]
     };
 
-    const { error: insertError } = await supabase
+    const { error: insertError } = await (supabase as any)
       .from('orders')
       .insert([testOrder])
       .select()

@@ -17,7 +17,7 @@ async function setupStorage() {
 
     // Create bucket if not exists
     console.log('Creating "products" storage bucket...');
-    const { data: createData, error: createError } = await supabase.storage.createBucket('products', {
+    const { error: createError } = await supabase.storage.createBucket('products', {
       public: true,
       fileSizeLimit: 2097152,
     });
@@ -51,7 +51,7 @@ async function setupStorage() {
     await supabase.rpc('delete_storage_policies', { bucket_name: 'products' }).catch(() => {});
 
     // Allow public read
-    const { error: readError } = await supabase.storage.from('products').createSignedUrl('test.txt', 60).catch(() => {});
+    await supabase.storage.from('products').createSignedUrl('test.txt', 60).catch(() => {});
     
     console.log('✓ RLS policies configured');
 

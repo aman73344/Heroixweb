@@ -124,7 +124,7 @@ export default function SettingsPage() {
                     <Input
                       value={storeForm.whatsapp}
                       onChange={e => setStoreForm({ ...storeForm, whatsapp: e.target.value })}
-                      placeholder="+923001234567"
+                      placeholder="+923143131716"
                       className="bg-background/50 border-border"
                     />
                   </div>

@@ -1,70 +1,46 @@
-const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim().toLowerCase()) || [];
+// Admin credential check - only used by the server-side login route handler.
+//
+// Credentials live in environment variables (.env.local), never in the code:
+//   ADMIN_EMAIL           the owner's admin email
+//   ADMIN_EMAILS          optional comma separated list of extra admin emails
+//   ADMIN_PASSWORD        the admin password
+//   ADMIN_SESSION_SECRET  secret used to sign the session cookie
 
-const VALID_ADMINS = [
-  { email: 'admin@heroix.com', password: 'admin123' },
-  { email: 'aman723344@gmail.com', password: 'admin123' },
-];
+export function getAdminEmails(): string[] {
+  const emails = [
+    ...(process.env.ADMIN_EMAIL || '').split(','),
+    ...(process.env.ADMIN_EMAILS || '').split(','),
+  ]
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean);
 
-export async function validateAdminAccess(email: string): Promise<boolean> {
-  const normalized = email.toLowerCase();
-  return ADMIN_EMAILS.includes(normalized) || VALID_ADMINS.some(a => a.email === normalized);
+  return Array.from(new Set(emails));
 }
 
-export async function signIn(email: string, password: string): Promise<{ user: any; session: any }> {
-  const normalizedEmail = email.toLowerCase().trim();
-  
-  // Check against valid admin credentials
-  const admin = VALID_ADMINS.find(a => a.email === normalizedEmail && a.password === password);
-  if (admin) {
-    return { 
-      user: { id: 'admin-1', email: admin.email, role: 'admin' }, 
-      session: { access_token: 'admin-session' } 
-    };
-  }
-  
-  // Check against configured admin emails (allow any password)
-  if (ADMIN_EMAILS.includes(normalizedEmail)) {
-    return { 
-      user: { id: 'admin-configured', email: normalizedEmail, role: 'admin' }, 
-      session: { access_token: 'admin-token' } 
-    };
-  }
-  
-  throw new Error('Invalid credentials');
+function getAdminPassword(): string | null {
+  const password = (process.env.ADMIN_PASSWORD || '').trim();
+  return password.length > 0 ? password : null;
 }
 
-export async function signUp(email: string, password: string): Promise<{ user: any; session: any }> {
-  throw new Error('Sign up not available. Please use configured admin credentials.');
+export function isAdminLoginConfigured(): boolean {
+  return getAdminEmails().length > 0 && getAdminPassword() !== null;
 }
 
-export async function signOut(): Promise<void> {
-  // No-op for local auth
+// Length + content comparison without early exit.
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
-export async function getCurrentUser(): Promise<any> {
-  return null;
-}
+/** True only when the email is a configured admin AND the password matches. */
+export function validateAdminCredentials(email: string, password: string): boolean {
+  const expectedPassword = getAdminPassword();
+  if (!expectedPassword || !email || !password) return false;
 
-export async function getSession(): Promise<any> {
-  return null;
-}
+  const emailOk = getAdminEmails().includes(email.trim().toLowerCase());
+  const passwordOk = safeEqual(password, expectedPassword);
 
-export function isValidAdminEmail(email: string | undefined): boolean {
-  if (!email) return false;
-  const normalized = email.toLowerCase();
-  return ADMIN_EMAILS.includes(normalized) || VALID_ADMINS.some(a => a.email === normalized);
+  return emailOk && passwordOk;
 }
-
-export function createSession(userId: string, email: string): string {
-  return `${userId}-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-}
-
-export function destroySession(sessionId: string): void {
-  // Session is destroyed by clearing the cookie on client side
-}
-
-export function getSessionData(sessionId: string): {userId: string; email: string} | null {
-  if (!sessionId) return null;
-  return { userId: 'admin-1', email: 'admin@heroix.com' };
-}
-

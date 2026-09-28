@@ -1,4 +1,4 @@
-import { getProductsFromSupabase, saveProductsToSupabase } from './db';
+import { getProductsFromSupabase } from './db';
 import { supabase } from './supabase';
 
 export interface Product {
