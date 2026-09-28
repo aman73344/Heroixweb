@@ -245,9 +245,18 @@ Notes:
 - `npm run dev` writes its log to `.next/dev/logs/next-development.log`; a stale
   error from an earlier edit can linger there, so restart the dev server if the
   terminal still shows an old error.
-- On Windows the terminal is UTF-8 via `.vscode/settings.json`. If you use your
+- On Windows the console is UTF-8 via `.vscode/settings.json`. If you use your
   own PowerShell, run `chcp 65001` first, otherwise the build/lint output shows
-  mojibake instead of the ✓ / ○ characters.
+  mojibake instead of the ✓ / ○ characters. The permanent fix is the registry
+  value below - `.vscode/settings.json` alone is not enough, because a dev
+  server started *before* the profile existed keeps the old console:
+
+  ```powershell
+  # Makes every NEW console window / VS Code terminal UTF-8 by default
+  New-ItemProperty -Path 'HKCU:\Console' -Name 'CodePage' -Value '65001' -PropertyType String -Force
+  ```
+
+  Close and reopen all terminals (and restart `npm run dev`) afterwards.
 
 ## DEPLOYING TO VERCEL
 
