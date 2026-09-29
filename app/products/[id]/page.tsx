@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { getProducts } from "@/lib/db";
-import { parseVariants, getVariantImages, ProductVariant } from "@/lib/variants";
+import { parseVariants, getVariantImages, getVariantPrice, hasOwnVariantPrice, ProductVariant } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { StarRating } from "@/components/star-rating";
 import Link from "next/link";
@@ -124,6 +124,16 @@ export default function ProductPage() {
   const isOutOfStock = stockCount !== null && stockCount <= 0;
   const isLowStock = stockCount !== null && stockCount > 0 && stockCount <= 5;
 
+  // The price that is actually charged: the picked design's own price when it has
+  // one, otherwise the parent product's price. Designs can now cost different
+  // amounts, so every "Rs ..." on this page has to use this value.
+  const activePrice = getVariantPrice(activeVariantObj, product.price);
+  const basePrice = getVariantPrice(null, product.price);
+  // Designs that do not all cost the same (so the page must not say "same price").
+  const designsHaveMixedPrices =
+    hasVariants &&
+    new Set(parsedVariants.map((v) => getVariantPrice(v, product.price))).size > 1;
+
   const handleAddToCart = () => {
     if (isOutOfStock) {
       const nameWithVariant = selectedVariant ? `${product.name} (${selectedVariant})` : product.name;
@@ -146,7 +156,7 @@ export default function ProductPage() {
       productId: product.id,
       variant: selectedVariant || undefined,
       name: product.name,
-      price: product.price,
+      price: activePrice,
       quantity: 1,
       image: cartImage,
       ...(stockCount !== null ? { stock: stockCount } : {}),
@@ -213,7 +223,7 @@ export default function ProductPage() {
       productId: product.id,
       variant: variant.name,
       name: product.name,
-      price: product.price,
+      price: getVariantPrice(variant, product.price),
       quantity: 1,
       image: variant.image || product.image,
       stock: variant.stock,
@@ -451,8 +461,13 @@ export default function ProductPage() {
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <p className="text-2xl font-bold text-accent">
-                    Rs {product.price}
+                    Rs {activePrice}
                   </p>
+                  {activeVariantObj && activePrice !== basePrice && (
+                    <span className="text-xs text-muted-foreground line-through">
+                      Rs {basePrice}
+                    </span>
+                  )}
                   {stockCount !== null && (
                     <span
                       className={`text-sm font-semibold ${
@@ -506,7 +521,10 @@ export default function ProductPage() {
                 </h3>
                 <span className="text-xs text-muted-foreground">
                   {parsedVariants.length} design{parsedVariants.length > 1 ? "s" : ""} available
-                  {" • "}same price Rs {product.price}
+                  {" • "}
+                  {designsHaveMixedPrices
+                    ? "each design has its own price"
+                    : `same price Rs ${basePrice}`}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -523,6 +541,11 @@ export default function ProductPage() {
                   // customer used to only ever see a single picture per design.
                   const variantPictures = getVariantImages(variant);
                   const cardImage = variantPictures[0] || images[0];
+                  // Each design is sold at its own price (falling back to the
+                  // product price only when the admin has not set one).
+                  const variantPrice = getVariantPrice(variant, product.price);
+                  const hasOwnPrice =
+                    hasOwnVariantPrice(variant) && variantPrice !== product.price;
                   return (
                     <div
                       key={`${variant.name}-${variantIdx}`}
@@ -619,8 +642,13 @@ export default function ProductPage() {
                         {/* The description is intentionally NOT printed here - it appears
                             in the main area only after the customer clicks this design. */}
                         <p className="text-sm font-bold text-accent mt-auto">
-                          Rs {product.price}
+                          Rs {variantPrice}
                         </p>
+                        {hasOwnPrice && (
+                          <p className="text-[10px] text-muted-foreground -mt-1">
+                            This design&apos;s own price
+                          </p>
+                        )}
                         <button
                           type="button"
                           disabled={isVariantOut}
@@ -787,7 +815,16 @@ export default function ProductPage() {
                   <div className="flex items-center justify-between pt-2 border-t border-border">
                     <div>
                       <p className="text-2xl font-bold text-accent">
-                        Rs {relatedProduct.price}
+                        {(() => {
+                          // Designs can each have their own price, so show a range.
+                          const prices = relatedDesigns
+                            .map((v) => getVariantPrice(v, relatedProduct.price))
+                            .filter((p) => p > 0);
+                          if (prices.length === 0) return `Rs ${relatedProduct.price}`;
+                          const min = Math.min(...prices);
+                          const max = Math.max(...prices);
+                          return min === max ? `Rs ${min}` : `Rs ${min} - ${max}`;
+                        })()}
                       </p>
                       <p
                         className={`text-xs font-semibold ${

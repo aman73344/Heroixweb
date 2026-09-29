@@ -141,5 +141,41 @@ check(
   leftovers === 'NONE' ? 'none' : leftovers
 );
 
+// 8) Each design must be able to carry its OWN price, and it must survive a
+//    full save/reload round-trip (otherwise the price silently reverts).
+const { getVariantPrice, hasOwnVariantPrice } = await import('../lib/variants.ts');
+const pricedLine = 'Design 2: 4 | price: 650 | image: https://cdn.example.com/a.png | desc: Blue form';
+const priced = parseVariants([pricedLine], 0)[0];
+check('price is read from the design line', priced?.price === 650, `got ${priced?.price}`);
+check('getVariantPrice returns the design price', getVariantPrice(priced, 500) === 650);
+check('hasOwnVariantPrice detects it', hasOwnVariantPrice(priced) === true);
+
+const repriced = parseVariants(formatVariantsForStorage([priced]), 0)[0];
+check('price survives storage round-trip', repriced?.price === 650, `got ${repriced?.price}`);
+check('picture and description still survive too', getVariantImages(repriced).length === 1 && repriced?.description === 'Blue form');
+check('stock still survives', repriced?.stock === 4);
+
+const textareaRoundTrip = parseVariants(formatVariantsForTextarea([priced]), 0)[0];
+check('price survives textarea round-trip', textareaRoundTrip?.price === 650);
+
+check(
+  'a design with no price falls back to the product price',
+  getVariantPrice(parseVariants(['Design 1: 3'], 0)[0], 500) === 500
+);
+check(
+  'a design literally named "Price: 5" keeps its name',
+  parseVariants(['Price: 5'], 0)[0]?.name === 'Price'
+);
+check(
+  'object form keeps its own price',
+  parseVariants([{ name: 'D', stock: 1, price: 777 }], 0)[0]?.price === 777
+);
+const multiPriced = parseVariants(['A: 1 | price: 400', 'B: 2 | price: 900', 'C: 3'], 0);
+check(
+  'mixed per-design prices parse independently',
+  multiPriced[0].price === 400 && multiPriced[1].price === 900 && multiPriced[2].price === undefined,
+  multiPriced.map((v) => v.price ?? 'none').join(',')
+);
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

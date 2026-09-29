@@ -14,7 +14,7 @@ import { ChatModal } from "@/components/chat-modal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getProducts } from "@/lib/db";
-import { parseVariants, getVariantImages } from "@/lib/variants";
+import { parseVariants, getVariantImages, getVariantPrice } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { StarRating } from "@/components/star-rating";
 import { getCategoryFilterOptions } from "@/lib/categories";
@@ -292,6 +292,17 @@ export default function Home() {
                 : Number(product.stock) || 0;
             const isOutOfStock = stockValue === 0;
             const isLowStock = stockValue !== null && stockValue > 0 && stockValue <= 5;
+            // Designs can each have their own price, so the card shows the
+            // cheapest one as "from" when they differ, otherwise the single price.
+            const designPrices = parsedVariants
+              .map((v: any) => getVariantPrice(v, product.price))
+              .filter((p: number) => p > 0);
+            const designPriceLabel =
+              designPrices.length === 0
+                ? `Rs ${product.price}`
+                : Math.min(...designPrices) === Math.max(...designPrices)
+                  ? `Rs ${Math.min(...designPrices)}`
+                  : `Rs ${Math.min(...designPrices)} - ${Math.max(...designPrices)}`;
             return (
             <Card
               key={product.id}
@@ -356,7 +367,7 @@ export default function Home() {
                 <div className="flex items-center justify-between pt-2 border-t border-border">
                   <div>
                     <p className="text-2xl font-bold text-accent">
-                      Rs {product.price}
+                      {designPriceLabel}
                     </p>
                     <p
                       className={`text-xs font-semibold ${

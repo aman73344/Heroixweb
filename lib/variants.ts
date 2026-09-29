@@ -10,6 +10,8 @@
 export interface ProductVariant {
   name: string;
   stock: number;
+  /** This design's own price. Falls back to the product price when unset. */
+  price?: number;
   image?: string;
   /** Up to MAX_VARIANT_IMAGES pictures for this design. `image` is always the first one. */
   images?: string[];
@@ -26,6 +28,8 @@ export const MAX_VARIANTS = 12;
 const IMAGE_KEYS = ['image', 'img', 'picture', 'pic', 'photo'];
 const IMAGE_LIST_KEYS = ['images', 'pictures', 'photos', 'gallery'];
 const DESCRIPTION_KEYS = ['desc', 'description', 'about', 'details', 'info', 'note'];
+/** Keys for a design's own price, e.g. "| price: 650". */
+const PRICE_KEYS = ['price', 'rate', 'cost', 'amount', 'rs'];
 
 /** Normalises a design's pictures: de-duped, capped at MAX_VARIANT_IMAGES, first one is the main image. */
 export function normalizeVariantImages(
@@ -76,6 +80,7 @@ export function parseVariantAttributes(raw: string): {
   image?: string;
   images?: string[];
   description?: string;
+  price?: number;
 } {
   const str = (raw || '').trim();
   if (str.indexOf('|') === -1) return { main: str };
@@ -85,8 +90,10 @@ export function parseVariantAttributes(raw: string): {
   const imageList: string[] = [];
   let description: string | undefined;
   let descriptionStarted = false;
+  let price: number | undefined;
 
-  for (const segment of segments) {
+  for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
+    const segment = segments[segmentIndex];
     // Old admin data wrote "Name: 5 | https://cdn/pic.png" - a bare picture URL must
     // be recognised before the "key: value" check (otherwise "https" looks like a key).
     if (looksLikeImage(segment)) {
@@ -110,6 +117,21 @@ export function parseVariantAttributes(raw: string): {
         .filter((url) => url && looksLikeImage(url))
         .forEach((url) => imageList.push(url));
       continue;
+    }
+    // The design's own price: "price: 650" / "Rs 650" / "rate: 650".
+    // Only attributes (segments after the first) can be a price - the first
+    // segment is always "Name: Stock", so a design that happens to be called
+    // "Price: 5" keeps its name instead of being read as a price.
+    if (price === undefined && segmentIndex > 0) {
+      const bareAmount = segment.match(/^(?:rs\.?\s*)?(\d+(?:\.\d+)?)$/i);
+      const keyedAmount = key && PRICE_KEYS.includes(key) && value
+        ? value.match(/^(?:rs\.?\s*)?(\d+(?:\.\d+)?)$/i)
+        : null;
+      const amount = keyedAmount || bareAmount;
+      if (amount && Number(amount[1]) > 0) {
+        price = Number(amount[1]);
+        continue;
+      }
     }
     if (key && DESCRIPTION_KEYS.includes(key) && !descriptionStarted) {
       description = value;
@@ -137,6 +159,7 @@ export function parseVariantAttributes(raw: string): {
     ...(images.length > 0 ? { image: images[0] } : {}),
     ...(images.length > 0 ? { images } : {}),
     ...(description ? { description } : {}),
+    ...(price !== undefined ? { price } : {}),
   };
 }
 
@@ -187,9 +210,11 @@ export function parseVariants(rawVariants: any, defaultStock: number = 0): Produ
       const description = item.description || item.desc || item.about
         ? String(item.description || item.desc || item.about).trim()
         : undefined;
+      const price = parseVariantPrice(item.price ?? item.rate ?? item.cost);
       results.push({
         name,
         stock: isNaN(stock) ? defaultStock : Math.max(0, stock),
+        ...(price !== undefined ? { price } : {}),
         ...(primaryImage ? { image: primaryImage } : {}),
         ...(images.length > 0 ? { images } : {}),
         ...(description ? { description } : {}),
@@ -213,9 +238,11 @@ export function parseVariants(rawVariants: any, defaultStock: number = 0): Produ
           const description = obj.description || obj.desc || obj.about
             ? String(obj.description || obj.desc || obj.about).trim()
             : undefined;
+          const price = parseVariantPrice(obj.price ?? obj.rate ?? obj.cost);
           results.push({
             name,
             stock: isNaN(stock) ? defaultStock : Math.max(0, stock),
+            ...(price !== undefined ? { price } : {}),
             ...(primaryImage ? { image: primaryImage } : {}),
             ...(images.length > 0 ? { images } : {}),
             ...(description ? { description } : {}),
@@ -231,9 +258,9 @@ export function parseVariants(rawVariants: any, defaultStock: number = 0): Produ
     let name = str;
     let stock = defaultStock;
 
-    // Split off the optional "| image: url" / "| images: a, b, c" and "| desc: text"
-    // suffixes.
-    const { main: mainPart, image, images, description } = parseVariantAttributes(str);
+    // Split off the optional "| image: url" / "| images: a, b, c" / "| price: 650"
+    // and "| desc: text" suffixes.
+    const { main: mainPart, image, images, description, price } = parseVariantAttributes(str);
 
     // Regex 1: "Name: 5" or "Name:5"
     const colonMatch = mainPart.match(/^(.+?)\s*[:=]\s*(\d+)\s*$/);
@@ -259,6 +286,7 @@ export function parseVariants(rawVariants: any, defaultStock: number = 0): Produ
       results.push({
         name,
         stock: isNaN(stock) ? defaultStock : Math.max(0, stock),
+        ...(price !== undefined ? { price } : {}),
         ...(image ? { image } : {}),
         ...(images && images.length > 0 ? { images } : {}),
         ...(description ? { description } : {}),
@@ -269,10 +297,35 @@ export function parseVariants(rawVariants: any, defaultStock: number = 0): Produ
   return results;
 }
 
+/** Parses a price that may arrive as a number or a numeric string ("650", "Rs 650"). */
+function parseVariantPrice(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const n = typeof value === 'string' ? Number(value.replace(/[^0-9.]/g, '')) : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n;
+}
+
+/**
+ * The price a design is actually sold at: its own price when the admin set one,
+ * otherwise the parent product's price (so existing products keep working).
+ */
+export function getVariantPrice(
+  variant: ProductVariant | null | undefined,
+  fallbackPrice: number = 0
+): number {
+  const own = parseVariantPrice(variant?.price);
+  if (own !== undefined) return own;
+  return Number(fallbackPrice) || 0;
+}
+
+/** True when a design costs more (or less) than the parent product. */
+export function hasOwnVariantPrice(variant: ProductVariant | null | undefined): boolean {
+  return parseVariantPrice(variant?.price) !== undefined;
+}
+
 /**
  * Serializes ProductVariant[] back to string format for storage/input:
- * "Name: Stock" or "Name: Stock | image: url" or
- * "Name: Stock | image: url | desc: text"
+ * "Name: Stock" or "Name: Stock | image: url | price: 650 | desc: text"
  */
 export function formatVariantsForStorage(variants: ProductVariant[]): string[] {
   return variants.map((v) => variantToLine(v));
@@ -287,6 +340,10 @@ export function formatVariantsForTextarea(variants: ProductVariant[]): string {
 
 function variantToLine(variant: ProductVariant): string {
   const parts = [`${variant.name}: ${variant.stock}`];
+  // A design's own price is stored explicitly, so it survives a reload and never
+  // falls back to the parent product's price by accident.
+  const price = parseVariantPrice(variant.price);
+  if (price !== undefined) parts.push(`price: ${price}`);
   const images = getVariantImages(variant);
   if (images.length === 1) {
     // A single picture keeps the short, backwards-compatible "| image: url" form.

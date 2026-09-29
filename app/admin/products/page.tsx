@@ -407,6 +407,45 @@ export default function ProductsPage() {
     }
   };
 
+  // Sets one design's own price. Each design is sold at its own price, so this
+  // writes "| price: 650" onto that design's line. An empty box clears it and the
+  // design falls back to the product price.
+  const setVariantPrice = (variantIndex: number, raw: string) => {
+    const parsed = parseVariants(form.variants, form.stock);
+    if (!parsed[variantIndex]) return;
+
+    const cleaned = String(raw).replace(/[^0-9.]/g, '');
+    const value = cleaned ? Number(cleaned) : NaN;
+
+    if (Number.isFinite(value) && value > 0) {
+      parsed[variantIndex].price = value;
+    } else {
+      delete parsed[variantIndex].price;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      variants: formatVariantsForTextarea(parsed),
+    }));
+  };
+
+  // Copies the product price onto every design that does not have its own, so the
+  // admin can then edit each one individually.
+  const applyProductPriceToAllDesigns = () => {
+    const parsed = parseVariants(form.variants, form.stock);
+    if (parsed.length === 0) return;
+    const price = Number(form.price) || 0;
+    if (price <= 0) {
+      alert("Set the product price first.");
+      return;
+    }
+    const updated = parsed.map((v) => ({ ...v, price }));
+    setForm((prev) => ({
+      ...prev,
+      variants: formatVariantsForTextarea(updated),
+    }));
+  };
+
   // Appends a new, ready-to-fill design line to the designs textarea. Up to
   // MAX_VARIANTS designs are supported, so adding a 4th, 6th or more design never
   // silently drops one.
@@ -847,7 +886,22 @@ export default function ProductsPage() {
               <p className="text-xs text-accent mt-1">
                 Up to {MAX_VARIANTS} designs per product, and up to {MAX_VARIANT_IMAGES} pictures per design.
                 Press &quot;Add Design&quot; to append a new line instead of typing it by hand.
+                Each design can have its own price — set it in the &quot;This design&apos;s
+                price&quot; box on its card, or type it inline as{" "}
+                <code className="text-accent">Design 2: 4 | price: 650</code>.
               </p>
+              {parseVariants(form.variants, form.stock).length > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={applyProductPriceToAllDesigns}
+                  className="border-accent text-accent hover:bg-accent/10"
+                  title="Give every design the product price, then edit each one"
+                >
+                  Copy product price to all designs
+                </Button>
+              )}
 
               {/* Variant Sub-Pictures Section */}
               {(() => {
@@ -1017,6 +1071,23 @@ export default function ProductsPage() {
                             <p className="text-[11px] text-muted-foreground">
                               Stock: {v.stock}
                             </p>
+                            {/* This design's own price. Every design is sold at its own
+                                price; leave it empty to fall back to the product price. */}
+                            <div>
+                              <label className="text-[10px] text-muted-foreground block">
+                                This design&apos;s price (Rs)
+                              </label>
+                              <input
+                                key={`price-${editingProductId || 'new-product'}-${vIdx}-${v.name}`}
+                                type="number"
+                                min="0"
+                                step="1"
+                                defaultValue={v.price ?? ''}
+                                onChange={(e) => setVariantPrice(vIdx, e.target.value)}
+                                placeholder={String(form.price || 'same as product')}
+                                className="w-full px-2 py-1 text-[11px] bg-background/70 border border-border rounded-md text-foreground focus:outline-none focus:border-accent"
+                              />
+                            </div>
                             <textarea
                               key={`desc-${editingProductId || 'new-product'}-${vIdx}-${v.name}`}
                               defaultValue={v.description || ''}

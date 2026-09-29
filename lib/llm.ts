@@ -2,7 +2,7 @@
 // Properly calls OpenRouter API for natural AI responses
 
 import { NAYAPAY_ACCOUNT_NAME, NAYAPAY_ACCOUNT_NUMBER, HEROIX_WHATSAPP_DISPLAY } from './store-config';
-import { parseVariants } from './variants';
+import { parseVariants, getVariantPrice } from './variants';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -54,8 +54,10 @@ ${products.length > 0
         // "desc:" attributes) so the prompt stays clean.
         const parsedVariants = parseVariants(p.variants, typeof p.stock === 'number' ? p.stock : 0);
         if (parsedVariants.length > 0) {
+          // Every design can have its own price, so quote it per design (and never
+          // the stored picture URLs or "desc:" attributes) to keep the prompt clean.
           variantStockStr = ` [designs: ${parsedVariants
-            .map((v) => `${v.name} (stock ${v.stock})`)
+            .map((v) => `${v.name} (stock ${v.stock}, Rs ${getVariantPrice(v, p.price)})`)
             .join(', ')}]`;
         }
       }
