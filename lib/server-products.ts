@@ -13,6 +13,8 @@ export interface Product {
   reviews?: number;
   inStock?: boolean;
   image?: string;
+  features?: string[];
+  variants?: string[];
   created_at?: string;
   updated_at?: string;
 }
@@ -34,13 +36,17 @@ export async function saveServerProducts(products: Product[]): Promise<boolean> 
       return {
         id: p.id,
         name: p.name,
-        description: p.description || '',
+        description: p.description,
         price: p.price,
         category: p.category,
         stock: p.stock || 0,
         image: firstImage,
         rating: p.rating || 4.5,
         reviews: p.reviews || 0,
+        // These must be carried through: an upsert that omits them wipes every
+        // design/picture the admin has uploaded for the product.
+        ...(p.features ? { features: p.features } : {}),
+        ...(p.variants ? { variants: p.variants } : {}),
         created_at: p.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
       };

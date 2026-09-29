@@ -6,6 +6,13 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 export interface VariantPicture {
   name: string;
   image: string;
+  /** Position of the design in the product's design list. */
+  designIndex: number;
+  /** 1-based position of this picture within that design's own pictures. */
+  pictureIndex: number;
+  /** How many pictures that design has in total. */
+  pictureCount: number;
+  stock: number;
 }
 
 /**
@@ -73,7 +80,7 @@ export function ProductImageCarousel({
             }}
           />
           <div className="absolute inset-0 flex items-center justify-center text-6xl font-black text-accent/30 hidden">
-            â˜…
+            ★
           </div>
 
           {/* Which design is on screen */}
@@ -128,22 +135,43 @@ export function ProductImageCarousel({
         </>
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-accent/20 to-transparent flex items-center justify-center text-6xl font-black text-accent/30">
-          â˜…
+          ★
         </div>
       )}
     </div>
   );
 }
 
-/** Flattens a product's designs into the picture list the carousel cycles through. */
+/**
+ * Flattens a product's designs into the picture list the carousel cycles through.
+ *
+ * Every design AND every one of its pictures is included, tagged with the
+ * design's position (designIndex) and the picture's own position, so callers can
+ * label a thumbnail with the right design even when two designs share a name -
+ * matching by name alone used to show the wrong design's stock/picture number.
+ */
 export function collectVariantPictures(
-  variants: { name: string; images?: string[]; image?: string }[]
+  variants: { name: string; images?: string[]; image?: string; stock?: number }[]
 ): VariantPicture[] {
   const out: VariantPicture[] = [];
-  for (const v of variants) {
-    for (const img of v.images && v.images.length > 0 ? v.images : v.image ? [v.image] : []) {
-      out.push({ name: v.name, image: img });
-    }
-  }
+  variants.forEach((v, designIndex) => {
+    const list =
+      v.images && v.images.length > 0
+        ? v.images
+        : v.image
+          ? [v.image]
+          : [];
+    list.forEach((image, pictureIdx) => {
+      if (!image) return;
+      out.push({
+        name: v.name,
+        image,
+        designIndex,
+        pictureIndex: pictureIdx + 1,
+        pictureCount: list.length,
+        stock: typeof v.stock === "number" ? v.stock : 0,
+      });
+    });
+  });
   return out;
 }

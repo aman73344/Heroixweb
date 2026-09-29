@@ -1,11 +1,10 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  Star,
   MessageCircle,
   ShoppingCart,
   RefreshCw,
@@ -17,8 +16,8 @@ import { useRouter } from "next/navigation";
 import { getProducts } from "@/lib/db";
 import { parseVariants, getVariantImages } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
-
-const defaultCategories = ['All', 'Anime', 'Superhero', 'Marvel', 'DC', 'Sports'];
+import { StarRating } from "@/components/star-rating";
+import { getCategoryFilterOptions } from "@/lib/categories";
 
 export default function Home() {
   const router = useRouter();
@@ -49,6 +48,22 @@ export default function Home() {
     selectedCategory === "All"
       ? productList
       : productList.filter((p: any) => p.category === selectedCategory);
+
+  // "All" + every real category (Anime, Superhero, Marvel, DC, Sports, Gaming,
+  // Others, plus anything else the admin has used) - so a product can never be
+  // hidden behind a category that is missing from the filter bar.
+  const categoryOptions = useMemo(
+    () => getCategoryFilterOptions(productList.map((p: any) => p.category)),
+    [productList]
+  );
+
+  // The filter can point at a category that is no longer in the data (e.g. after
+  // a rename) - fall back to showing everything rather than an empty page.
+  useEffect(() => {
+    if (selectedCategory !== "All" && !categoryOptions.includes(selectedCategory)) {
+      setSelectedCategory("All");
+    }
+  }, [selectedCategory, categoryOptions]);
 
   const handleAddToCart = (product: any) => {
     // If product has variants, direct to the product page so customer can pick their design & see stock
@@ -176,7 +191,7 @@ export default function Home() {
                 </div>
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
-                    4.8â˜…
+                    4.8 ★
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Customer Rating
@@ -214,7 +229,7 @@ export default function Home() {
       <section className="border-b border-border bg-card/30 py-6">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center gap-2 overflow-x-auto pb-2">
-            {defaultCategories.map((category) => (
+            {categoryOptions.map((category) => (
               <button
                 key={category}
                 onClick={() => setSelectedCategory(category)}
@@ -284,19 +299,16 @@ export default function Home() {
                   </p>
                   <div className="flex gap-2 overflow-x-auto pb-0.5">
                     {collectVariantPictures(parsedVariants).map((pic, picIdx) => {
-                      const design = parsedVariants.find((d) => d.name === pic.name);
-                      const designPics = getVariantImages(design);
-                      const picNo = designPics.indexOf(pic.image) + 1;
                       return (
                         <button
-                          key={`${pic.name}-${picIdx}`}
+                          key={`${pic.designIndex}-${pic.pictureIndex}-${picIdx}`}
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             router.push(`/products/${product.id}`);
                           }}
                           className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors"
-                          title={`${pic.name}${designPics.length > 1 ? ` (picture ${picNo} of ${designPics.length})` : ""}${design && design.stock <= 0 ? " (Out of stock)" : design ? ` - ${design.stock} left` : ""}`}
+                          title={`${pic.name}${pic.pictureCount > 1 ? ` (picture ${pic.pictureIndex} of ${pic.pictureCount})` : ""}${pic.stock <= 0 ? " (Out of stock)" : ` - ${pic.stock} left`}`}
                         >
                           <img
                             src={pic.image}
@@ -320,24 +332,9 @@ export default function Home() {
                   </p>
                 </div>
 
-                {/* Rating */}
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`w-4 h-4 ${
-                          i < Math.floor(product.rating)
-                            ? "fill-accent text-accent"
-                            : "text-muted-foreground"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-sm text-muted-foreground">
-                    {product.rating} ({product.reviews})
-                  </span>
-                </div>
+                {/* Rating - shows empty stars and "No reviews yet" for a product that
+                    has no reviews yet, instead of a misleading "4.5 (0)". */}
+                <StarRating rating={product.rating} reviews={product.reviews} />
 
                 {/* Price and Action */}
                 <div className="flex items-center justify-between pt-2 border-t border-border">

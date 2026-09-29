@@ -37,7 +37,7 @@ interface OpenRouterResponse {
 const SYSTEM_PROMPT_TEMPLATE = (products: Product[], sessionContext?: any) => `You are HEROIX, a friendly ecommerce sales assistant for an anime/superhero keychain store in Pakistan. Be conversational, helpful, and guide customers to purchases.
 
 STORE INFO:
-- We sell Anime, Superhero, Marvel, DC, and Sports keychains
+- We sell Anime, Superhero, Marvel, DC, Sports, Gaming and Others keychains
 - Prices: Rs 450-750
 - Shipping: Rs 280 delivery charge nationwide (5-7 days)
 - Payment: NayaPay ONLY - NO Cash on Delivery, no SadaPay/Easypaisa/JazzCash/bank transfer
@@ -85,6 +85,8 @@ CATEGORY FILTERING:
 - Marvel: Iron Man, Spider-Man, Thor, Captain America, Avengers, X-Men
 - Anime: Naruto, One Piece, Dragon Ball Z, Attack on Titan, Demon Slayer, Jujutsu Kaisen, Evangelion
 - Sports: Ronaldo, Messi, Football, Cricket
+- Gaming: gamer keychains, game logos, game characters
+- Others: anything else in the catalogue that fits no category above
 
 LIST COMMANDS:
 - "list all" / "show everything" → list all available products
@@ -251,7 +253,7 @@ function generateEnhancedFallbackResponse(
     return "Let me check our inventory and get back to you!";
   }
   
-  const listCategoryPatterns = /(?:list|show|view| dikhao).*?(dc|marvel|anime|anime|dragon ball|sports|superhero|batman|superman|spider|iron|thor|football|cricket)/i;
+  const listCategoryPatterns = /(?:list|show|view| dikhao).*?(dc|marvel|anime|dragon ball|sports|superhero|gaming|games|others|batman|superman|spider|iron|thor|football|cricket)/i;
   const categoryMatch = lastMessage.match(listCategoryPatterns);
   if (categoryMatch) {
     const category = categoryMatch[1].toLowerCase();

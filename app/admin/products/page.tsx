@@ -8,7 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Edit2, Trash2, Plus, X, Upload, Loader2, ImageIcon } from "lucide-react";
 import { getProducts } from "@/lib/db";
 import { supabase } from "@/lib/supabase";
-import { parseVariants, formatVariantsForStorage, formatVariantsForTextarea, calculateEffectiveStock, getVariantImages, normalizeVariantImages, MAX_VARIANT_IMAGES } from "@/lib/variants";
+import { parseVariants, formatVariantsForStorage, formatVariantsForTextarea, calculateEffectiveStock, getVariantImages, normalizeVariantImages, MAX_VARIANT_IMAGES, MAX_VARIANTS } from "@/lib/variants";
+import { PRODUCT_CATEGORIES } from "@/lib/categories";
+import { StarRating } from "@/components/star-rating";
 
 interface ProductForm {
   name: string;
@@ -19,6 +21,7 @@ interface ProductForm {
   category: string;
   stock: number;
   rating: number;
+  reviews: number;
   images: string[];
 }
 
@@ -54,6 +57,7 @@ export default function ProductsPage() {
     category: "Anime",
     stock: 0,
     rating: 4.5,
+    reviews: 0,
     images: [],
   });
 
@@ -402,6 +406,51 @@ export default function ProductsPage() {
     }
   };
 
+  // Appends a new, ready-to-fill design line to the designs textarea. Up to
+  // MAX_VARIANTS designs are supported, so adding a 4th, 6th or more design never
+  // silently drops one.
+  const addDesignLine = () => {
+    const existing = parseVariants(form.variants, form.stock);
+    if (existing.length >= MAX_VARIANTS) {
+      alert(`A product can have up to ${MAX_VARIANTS} designs.`);
+      return;
+    }
+
+    // Pick a name that is not used yet, so two designs never share a name (that
+    // makes them indistinguishable in the store).
+    const used = new Set(existing.map((v) => v.name.toLowerCase()));
+    let n = existing.length + 1;
+    while (used.has(`design ${n}`)) n += 1;
+
+    setForm((prev) => ({
+      ...prev,
+      variants: prev.variants.trim() ? `${prev.variants.replace(/\s+$/, '')}\nDesign ${n}: 1` : `Design ${n}: 1`,
+    }));
+  };
+
+  // Removes one design (with all of its pictures and description).
+  const removeDesignLine = (designIndex: number) => {
+    const parsed = parseVariants(form.variants, form.stock);
+    if (!parsed[designIndex]) return;
+    parsed.splice(designIndex, 1);
+
+    // Drop any description still being typed for the removed design so the
+    // indices cannot shift onto a different design.
+    delete variantDescRefs.current[designIndex];
+    const reindexed: Record<number, string> = {};
+    Object.entries(variantDescRefs.current).forEach(([key, value]) => {
+      const idx = Number(key);
+      if (idx < designIndex) reindexed[idx] = value;
+      else if (idx > designIndex) reindexed[idx - 1] = value;
+    });
+    variantDescRefs.current = reindexed;
+
+    setForm((prev) => ({
+      ...prev,
+      variants: formatVariantsForTextarea(parsed),
+    }));
+  };
+
 
 
   const filteredProducts = productList.filter(
@@ -447,9 +496,9 @@ export default function ProductsPage() {
         category: form.category,
         stock: finalStock,
         rating: form.rating,
+        reviews: Math.max(0, Number(form.reviews) || 0),
         image: form.images[0],
         image_urls: form.images,
-        reviews: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -481,10 +530,10 @@ export default function ProductsPage() {
         category: form.category,
         stock: finalStock,
         rating: form.rating,
+        reviews: Math.max(0, Number(form.reviews) || 0),
         image: form.images[0],
         images: form.images,
         inStock: finalStock > 0,
-        reviews: 0,
       };
 
       if (editingProductId) {
@@ -506,6 +555,7 @@ export default function ProductsPage() {
         category: "Anime",
         stock: 0,
         rating: 4.5,
+        reviews: 0,
         images: [],
       });
       setShowAddForm(false);
@@ -545,6 +595,7 @@ export default function ProductsPage() {
         category: product.category,
         stock: product.stock ?? 1,
         rating: product.rating,
+        reviews: Number(product.reviews) || 0,
         images: images,
       });
       setShowAddForm(true);
@@ -589,6 +640,7 @@ export default function ProductsPage() {
               category: "Anime",
               stock: 0,
               rating: 4.5,
+              reviews: 0,
               images: [],
             });
             setShowAddForm(!showAddForm);
@@ -637,11 +689,17 @@ export default function ProductsPage() {
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
                 className="w-full px-3 py-2 bg-background/50 border border-border rounded-lg text-foreground focus:outline-none focus:border-accent"
               >
-                <option value="Anime">Anime</option>
-                <option value="Superhero">Superhero</option>
-                <option value="Marvel">Marvel</option>
-                <option value="DC">DC</option>
-                <option value="Sports">Sports</option>
+                {PRODUCT_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+                {/* Keeps a product's existing category selectable even if it is
+                    not in the shared list. */}
+                {form.category &&
+                  !PRODUCT_CATEGORIES.includes(form.category as any) && (
+                    <option value={form.category}>{form.category}</option>
+                  )}
               </select>
             </div>
 
@@ -674,6 +732,47 @@ export default function ProductsPage() {
                 className="bg-background/50 border-border"
               />
             </div>
+            <div>
+              <label className="text-sm text-muted-foreground block mb-2">
+                Rating (0 - 5)
+              </label>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                max="5"
+                value={form.rating}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    rating: Math.min(5, Math.max(0, parseFloat(e.target.value) || 0)),
+                  })
+                }
+                placeholder="4.5"
+                className="bg-background/50 border-border"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-muted-foreground block mb-2">
+                Number of reviews
+              </label>
+              <Input
+                type="number"
+                min="0"
+                value={form.reviews || ''}
+                onChange={(e) =>
+                  setForm({ ...form, reviews: Math.max(0, parseInt(e.target.value) || 0) })
+                }
+                placeholder="0"
+                className="bg-background/50 border-border"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Leave at 0 when there are no real reviews yet - the store then
+                shows &quot;No reviews yet&quot; instead of a fake score.
+              </p>
+            </div>
+
 
             <div className="md:col-span-2">
               <label className="text-sm text-muted-foreground block mb-2">
@@ -708,23 +807,41 @@ export default function ProductsPage() {
             </div>
 
             <div className="md:col-span-2">
-              <label className="text-sm text-muted-foreground block mb-2">
-                Variants / Designs with Stock (optional — one per line, e.g. &quot;Red: 10&quot;)
-              </label>
+              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <label className="text-sm text-muted-foreground">
+                  Variants / Designs with Stock (optional &mdash; one per line, e.g. &quot;Red: 10&quot;)
+                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={addDesignLine}
+                  disabled={parseVariants(form.variants, form.stock).length >= MAX_VARIANTS}
+                  className="border-accent text-accent hover:bg-accent/10"
+                  title={`Add another design (up to ${MAX_VARIANTS})`}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add Design
+                </Button>
+              </div>
               <textarea
                 value={form.variants}
                 onChange={(e) => setForm({ ...form, variants: e.target.value })}
                 placeholder={"Vegeta Base Form: 5\nVegeta Super Saiyan: 4\nVegeta Super Saiyan Blue: 3"}
-                rows={4}
+                rows={6}
                 className="w-full px-3 py-2 bg-background/50 border border-border rounded-lg text-foreground focus:outline-none focus:border-accent font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Optional — only for keychains that come in multiple colors or
+                Optional &mdash; only for keychains that come in multiple colors or
                 designs. Format each line as <code className="text-accent">Design Name: Stock</code> (e.g. <code className="text-accent">Red: 10</code>).
                 Each variant gets its own independent stock counter and pill on the product page.
                 Total stock will automatically sum up across all variants.
                 Pictures are uploaded in the panel below and each design&apos;s description is typed there too
                 (stored as <code className="text-accent">Name: Stock | image: url | desc: text</code>).
+              </p>
+              <p className="text-xs text-accent mt-1">
+                Up to {MAX_VARIANTS} designs per product, and up to {MAX_VARIANT_IMAGES} pictures per design.
+                Press &quot;Add Design&quot; to append a new line instead of typing it by hand.
               </p>
 
               {/* Variant Sub-Pictures Section */}
@@ -742,6 +859,9 @@ export default function ProductsPage() {
                       <p className="text-sm font-bold text-foreground">
                         Pictures &amp; Descriptions for Each Variant / Design
                       </p>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent/10 text-foreground border border-border font-semibold">
+                        {parsed.length}/{MAX_VARIANTS} designs
+                      </span>
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-accent/20 text-accent border border-accent/30 font-semibold">
                         {withPictures}/{parsed.length} pictures
                       </span>
@@ -893,7 +1013,7 @@ export default function ProductsPage() {
                               Stock: {v.stock}
                             </p>
                             <textarea
-                              key={`desc-${editingProductId || 'new-product'}-${v.name}`}
+                              key={`desc-${editingProductId || 'new-product'}-${vIdx}-${v.name}`}
                               defaultValue={v.description || ''}
                               onChange={(e) => {
                                 variantDescRefs.current[vIdx] = e.target.value;
@@ -907,16 +1027,35 @@ export default function ProductsPage() {
                               <label className="text-[10px] text-muted-foreground">
                                 Pictures ({designImages.length}/{MAX_VARIANT_IMAGES})
                               </label>
-                              {v.description ? (
+                              <div className="flex items-center gap-2">
+                                {v.description ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeVariantDescription(vIdx)}
+                                    className="text-[11px] text-muted-foreground hover:text-red-400"
+                                    title="Clear this design's description"
+                                  >
+                                    Clear desc
+                                  </button>
+                                ) : null}
                                 <button
                                   type="button"
-                                  onClick={() => removeVariantDescription(vIdx)}
-                                  className="text-[11px] text-muted-foreground hover:text-red-400"
-                                  title="Clear this design's description"
+                                  onClick={() => {
+                                    if (
+                                      confirm(
+                                        `Remove design "${v.name}" with its pictures and description?`
+                                      )
+                                    ) {
+                                      removeDesignLine(vIdx);
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-red-400"
+                                  title="Remove this whole design"
                                 >
-                                  Clear desc
+                                  <X className="w-3 h-3" />
+                                  Remove
                                 </button>
-                              ) : null}
+                              </div>
                             </div>
                             <input
                               type="file"
@@ -1037,6 +1176,7 @@ export default function ProductsPage() {
                     category: "Anime",
                     stock: 0,
                     rating: 4.5,
+                    reviews: 0,
                     images: [],
                   });
                 }}
@@ -1111,8 +1251,12 @@ export default function ProductsPage() {
                 </span>
               </div>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
-                <span>⭐ {product.rating}</span>
-                <span>({product.reviews} reviews)</span>
+                <StarRating
+                  rating={product.rating}
+                  reviews={product.reviews}
+                  size="w-3.5 h-3.5"
+                  className="text-xs"
+                />
               </div>
               <div className="flex gap-2 pt-2 border-t border-border">
                 <Button

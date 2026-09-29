@@ -40,11 +40,30 @@ export async function getProducts(): Promise<any[]> {
 
     for (let attempt = 0; attempt < 3; attempt++) {
       const columns = [...BASE_COLUMNS, ...selectedOptional].join(', ');
-      ({ data, error } = await (supabase as any)
-        .from('products')
-        .select(columns)
-        .limit(50));
+      // Supabase/PostgREST caps a single response at its own row limit, so the
+      // rows are paged in. Without this a product beyond the first page (there
+      // are more than 50 in the table) simply never loads, which looks like
+      // "my product/design vanished after a reload".
+      const pageSize = 200;
+      const page: any[] = [];
+      for (let from = 0; from < 2000; from += pageSize) {
+        const chunk: any = await (supabase as any)
+          .from('products')
+          .select(columns)
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
 
+        if (chunk.error) {
+          error = chunk.error;
+          break;
+        }
+
+        const rows = Array.isArray(chunk.data) ? chunk.data : [];
+        page.push(...rows);
+        if (rows.length < pageSize) break;
+      }
+
+      data = page;
       if (!error || (error as any).code !== '42703') break;
 
       const match =

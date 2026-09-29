@@ -6,17 +6,16 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  Star,
   ShoppingCart,
   ChevronLeft,
   ChevronRight,
-  Check,
   Sparkles,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { getProducts } from "@/lib/db";
 import { parseVariants, getVariantImages, ProductVariant } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
+import { StarRating } from "@/components/star-rating";
 import Link from "next/link";
 
 export default function ProductPage() {
@@ -448,21 +447,7 @@ export default function ProductPage() {
 
               <div className="flex flex-col sm:flex-row gap-4 animate-in fade-in slide-in-from-left duration-700 delay-200">
                 <div className="flex items-center gap-2">
-                  <div className="flex gap-1">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`w-4 h-4 ${
-                          i < Math.floor(product.rating)
-                            ? "fill-accent text-accent"
-                            : "text-muted-foreground"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-sm text-muted-foreground">
-                    {product.rating} ({product.reviews})
-                  </span>
+                  <StarRating rating={product.rating} reviews={product.reviews} />
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <p className="text-2xl font-bold text-accent">
@@ -531,13 +516,16 @@ export default function ProductPage() {
                 the cart or in your order.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {parsedVariants.map((variant) => {
+                {parsedVariants.map((variant, variantIdx) => {
                   const isSelected = selectedVariant === variant.name;
                   const isVariantOut = variant.stock <= 0;
-                  const cardImage = variant.image || images[0];
+                  // All of this design's own pictures, not just the first one - the
+                  // customer used to only ever see a single picture per design.
+                  const variantPictures = getVariantImages(variant);
+                  const cardImage = variantPictures[0] || images[0];
                   return (
                     <div
-                      key={variant.name}
+                      key={`${variant.name}-${variantIdx}`}
                       className={`rounded-2xl border-2 bg-card/50 overflow-hidden flex flex-col transition-all ${
                         isSelected
                           ? "border-accent ring-2 ring-accent/30 shadow-lg shadow-accent/10"
@@ -564,9 +552,12 @@ export default function ProductPage() {
                               {variant.name.charAt(0).toUpperCase()}
                             </div>
                           )}
-                          {isSelected && (
-                            <span className="absolute top-2 left-2 w-6 h-6 rounded-full bg-accent text-accent-foreground flex items-center justify-center shadow-lg">
-                              <Check className="w-3.5 h-3.5" />
+                          {variantPictures.length > 1 && (
+                            <span
+                              className="absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full bg-black/70 text-white font-semibold shadow"
+                              title={`This design has ${variantPictures.length} pictures`}
+                            >
+                              {variantPictures.length} photos
                             </span>
                           )}
                           {isSelected && (
@@ -591,6 +582,40 @@ export default function ProductPage() {
                         <p className="text-sm font-semibold text-foreground leading-snug">
                           {variant.name}
                         </p>
+                        {/* Every picture of this design, right on the card. Clicking one
+                            opens that design on that exact picture in the big view, so
+                            a design with several photos is fully viewable instead of
+                            only ever showing the first one. */}
+                        {variantPictures.length > 1 && (
+                          <div className="flex gap-1.5 overflow-x-auto pb-1">
+                            {variantPictures.map((pic, picIdx) => {
+                              const picActive = isSelected && safeImageIndex === picIdx;
+                              return (
+                                <button
+                                  key={`${pic}-${picIdx}`}
+                                  type="button"
+                                  title={`${variant.name} - picture ${picIdx + 1} of ${variantPictures.length}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedVariant(variant.name);
+                                    setCurrentImageIndex(picIdx);
+                                  }}
+                                  className={`flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-colors ${
+                                    picActive
+                                      ? "border-accent ring-1 ring-accent/40"
+                                      : "border-border hover:border-accent/60"
+                                  } ${isVariantOut ? "opacity-50 grayscale" : ""}`}
+                                >
+                                  <img
+                                    src={pic}
+                                    alt={`${variant.name} picture ${picIdx + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                         {/* The description is intentionally NOT printed here - it appears
                             in the main area only after the customer clicks this design. */}
                         <p className="text-sm font-bold text-accent mt-auto">
@@ -729,19 +754,16 @@ export default function ProductPage() {
                     </p>
                     <div className="flex gap-2 overflow-x-auto pb-0.5">
                       {relatedDesignPictures.map((pic, picIdx) => {
-                        const design = relatedDesigns.find((d) => d.name === pic.name);
-                        const designPics = getVariantImages(design);
-                        const picNo = designPics.indexOf(pic.image) + 1;
                         return (
                           <button
-                            key={`${pic.name}-${picIdx}`}
+                            key={`${pic.designIndex}-${pic.pictureIndex}-${picIdx}`}
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               router.push(`/products/${relatedProduct.id}`);
                             }}
                             className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors"
-                            title={`${pic.name}${designPics.length > 1 ? ` (picture ${picNo} of ${designPics.length})` : ""}${design && design.stock <= 0 ? " (Out of stock)" : design ? ` - ${design.stock} left` : ""}`}
+                            title={`${pic.name}${pic.pictureCount > 1 ? ` (picture ${pic.pictureIndex} of ${pic.pictureCount})` : ""}${pic.stock <= 0 ? " (Out of stock)" : ` - ${pic.stock} left`}`}
                           >
                             <img
                               src={pic.image}

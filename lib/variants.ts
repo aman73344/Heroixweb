@@ -11,20 +11,23 @@ export interface ProductVariant {
   name: string;
   stock: number;
   image?: string;
-  /** Up to 3 pictures for this design. `image` is always the first one. */
+  /** Up to MAX_VARIANT_IMAGES pictures for this design. `image` is always the first one. */
   images?: string[];
   description?: string;
 }
 
 /** How many pictures a single design/variant may have. */
-export const MAX_VARIANT_IMAGES = 3;
+export const MAX_VARIANT_IMAGES = 6;
 
-// Keys understood inside a variant string, e.g. "| image: url" / "| desc: text".
+/** How many designs/variants one product may have (at least 6 are supported). */
+export const MAX_VARIANTS = 12;
+
+/** Keys understood inside a variant string, e.g. "| image: url" / "| desc: text". */
 const IMAGE_KEYS = ['image', 'img', 'picture', 'pic', 'photo'];
 const IMAGE_LIST_KEYS = ['images', 'pictures', 'photos', 'gallery'];
 const DESCRIPTION_KEYS = ['desc', 'description', 'about', 'details', 'info', 'note'];
 
-/** Normalises a design's pictures: de-duped, max 3, first one is the main image. */
+/** Normalises a design's pictures: de-duped, capped at MAX_VARIANT_IMAGES, first one is the main image. */
 export function normalizeVariantImages(
   ...sources: (string | string[] | undefined | null)[]
 ): string[] {
@@ -305,3 +308,36 @@ export function calculateEffectiveStock(baseStock: number, variants: ProductVari
   if (!variants || variants.length === 0) return baseStock;
   return variants.reduce((sum, v) => sum + v.stock, 0);
 }
+
+/**
+ * A design's unique identity.
+ *
+ * Two designs of the same product can legitimately share a name (e.g. admin typed
+ * "Design 4" twice). Selecting/storing a design by name alone then makes the UI
+ * highlight or replace the wrong card, and duplicate React keys make one design
+ * silently disappear from the grid. Keying on name + position keeps every design
+ * distinct without renaming the customer's data.
+ */
+export function variantKey(variant: ProductVariant | null | undefined, index: number): string {
+  return `${variant?.name ?? ''}#${index}`;
+}
+
+/** Finds a design by its stable key (see variantKey). */
+export function findVariantByKey(
+  variants: ProductVariant[],
+  key: string | null
+): { variant: ProductVariant | null; index: number } {
+  if (!key) return { variant: null, index: -1 };
+  const [name, rawIndex] = key.split('#');
+  const index = Number(rawIndex);
+  if (!Number.isFinite(index) || !variants[index] || variants[index].name !== name) {
+    return { variant: null, index: -1 };
+  }
+  return { variant: variants[index], index };
+}
+
+/** How many pictures one design has (falls back to its single image). */
+export function countVariantImages(variant: ProductVariant | null | undefined): number {
+  return getVariantImages(variant).length;
+}
+
