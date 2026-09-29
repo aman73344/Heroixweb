@@ -10,6 +10,7 @@ import { getProducts } from "@/lib/db";
 import { supabase } from "@/lib/supabase";
 import { parseVariants, formatVariantsForStorage, formatVariantsForTextarea, calculateEffectiveStock, getVariantImages, normalizeVariantImages, MAX_VARIANT_IMAGES, MAX_VARIANTS } from "@/lib/variants";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
+import { normalizeRating, normalizeReviewCount, DEFAULT_RATING } from "@/lib/reviews";
 import { StarRating } from "@/components/star-rating";
 
 interface ProductForm {
@@ -56,7 +57,7 @@ export default function ProductsPage() {
     price: 0,
     category: "Anime",
     stock: 0,
-    rating: 0,
+    rating: DEFAULT_RATING,
     reviews: 0,
     images: [],
   });
@@ -495,8 +496,8 @@ export default function ProductsPage() {
         price: form.price,
         category: form.category,
         stock: finalStock,
-        rating: form.rating,
-        reviews: Math.max(0, Number(form.reviews) || 0),
+        rating: normalizeRating(form.rating),
+        reviews: normalizeReviewCount(form.reviews),
         image: form.images[0],
         image_urls: form.images,
         created_at: new Date().toISOString(),
@@ -529,8 +530,8 @@ export default function ProductsPage() {
         price: form.price,
         category: form.category,
         stock: finalStock,
-        rating: form.rating,
-        reviews: Math.max(0, Number(form.reviews) || 0),
+        rating: normalizeRating(form.rating),
+        reviews: normalizeReviewCount(form.reviews),
         image: form.images[0],
         images: form.images,
         inStock: finalStock > 0,
@@ -554,7 +555,7 @@ export default function ProductsPage() {
         price: 0,
         category: "Anime",
         stock: 0,
-        rating: 0,
+        rating: DEFAULT_RATING,
         reviews: 0,
         images: [],
       });
@@ -594,8 +595,8 @@ export default function ProductsPage() {
         price: product.price,
         category: product.category,
         stock: product.stock ?? 1,
-        rating: product.rating,
-        reviews: Number(product.reviews) || 0,
+        rating: normalizeRating(product.rating),
+        reviews: normalizeReviewCount(product.reviews),
         images: images,
       });
       setShowAddForm(true);
@@ -639,7 +640,7 @@ export default function ProductsPage() {
               price: 0,
               category: "Anime",
               stock: 0,
-              rating: 0,
+              rating: DEFAULT_RATING,
               reviews: 0,
               images: [],
             });
@@ -748,12 +749,12 @@ export default function ProductsPage() {
                     rating: Math.min(5, Math.max(0, parseFloat(e.target.value) || 0)),
                   })
                 }
-                placeholder="0 - leave empty if no rating"
+                placeholder={String(DEFAULT_RATING)}
                 className="bg-background/50 border-border"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Leave empty when customers have not rated this yet - the store
-                shows &quot;No reviews yet&quot; instead of inventing a score.
+                Defaults to {DEFAULT_RATING} ★. Update it here whenever you have
+                the real score for this keychain.
               </p>
             </div>
 
@@ -772,8 +773,8 @@ export default function ProductsPage() {
                 className="bg-background/50 border-border"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Leave at 0 when there are no real reviews yet - the store then
-                shows &quot;No reviews yet&quot; instead of a fake score.
+                How many customer reviews this rating is based on. Leave at 0 and
+                the card shows just the star rating.
               </p>
             </div>
 
@@ -1179,7 +1180,7 @@ export default function ProductsPage() {
                     price: 0,
                     category: "Anime",
                     stock: 0,
-                    rating: 0,
+                    rating: DEFAULT_RATING,
                     reviews: 0,
                     images: [],
                   });

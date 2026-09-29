@@ -18,7 +18,7 @@ import { parseVariants, getVariantImages } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { StarRating } from "@/components/star-rating";
 import { getCategoryFilterOptions } from "@/lib/categories";
-import { normalizeRating, normalizeReviewCount } from "@/lib/reviews";
+import { normalizeRating, normalizeReviewCount, DEFAULT_RATING } from "@/lib/reviews";
 
 export default function Home() {
   const router = useRouter();
@@ -58,22 +58,19 @@ export default function Home() {
     [productList]
   );
 
-  // The store's real average rating, weighted by how many reviews each product
-  // has. Products with no reviews are ignored entirely, and when nothing has
-  // been reviewed yet this stays null so the hero can say "No reviews yet"
-  // rather than showing a made-up score.
+  // The store's average rating, weighted by how many reviews each product has.
+  // Products that have no reviews of their own still count, using the store
+  // default rating, so the hero always shows a proper score.
   const storeRating = useMemo(() => {
     let weighted = 0;
     let totalReviews = 0;
     for (const p of productList) {
-      const reviews = normalizeReviewCount(p?.reviews);
+      const reviews = normalizeReviewCount(p?.reviews, 1);
       const rating = normalizeRating(p?.rating);
-      if (reviews > 0 && rating > 0) {
-        weighted += rating * reviews;
-        totalReviews += reviews;
-      }
+      weighted += rating * reviews;
+      totalReviews += reviews;
     }
-    return totalReviews > 0 ? weighted / totalReviews : null;
+    return totalReviews > 0 ? weighted / totalReviews : DEFAULT_RATING;
   }, [productList]);
 
   // The filter can point at a category that is no longer in the data (e.g. after
@@ -208,17 +205,13 @@ export default function Home() {
                   </p>
                   <p className="text-sm text-muted-foreground">Categories</p>
                 </div>
-                {/* The average is computed from real reviews. When no product has
-                    been rated yet, it says so instead of claiming a 4.8 score. */}
+                {/* The average is computed from the catalogue and falls back to the
+                    store's default rating. */}
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
-                    {storeRating
-                      ? `${storeRating.toFixed(1)} ★`
-                      : "No reviews yet"}
+                    {storeRating.toFixed(1)} ★
                   </p>
-                  <p className="text-sm text-muted-foreground">
-                    {storeRating ? "Customer Rating" : "Be the first to review"}
-                  </p>
+                  <p className="text-sm text-muted-foreground">Customer Rating</p>
                 </div>
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
