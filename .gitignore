@@ -23,6 +23,18 @@ data/
 tmp-*
 temp.txt
 
+# One-off diagnostic output from the terminal / verification scripts
+# (scripts/term-diag.ps1, scripts/smoke*.mjs, scripts/verify-fixes.mjs)
+term-diag-out.txt
+clean-*.txt
+*-out.txt
+*-err.txt
+tsc*.log
+verify-*.txt
+smoke-*.txt
+v-dump.txt
+proc-dump.txt
+
 # Keep npm as the single source of truth: committing a second lockfile
 # (pnpm-lock.yaml / yarn.lock) makes Vercel pick a different package manager
 # than the one used locally, which silently installs a different tree.
