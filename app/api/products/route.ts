@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerProducts, saveServerProducts, deleteServerProduct } from '@/lib/server-products';
 import { supabase } from '@/lib/supabase';
+import { normalizeRating, normalizeReviewCount } from '@/lib/reviews';
 
 export async function GET(request: NextRequest) {
   try {
@@ -51,8 +52,8 @@ export async function POST(request: NextRequest) {
         category: product.category || 'Anime',
         stock: product.stock || 0,
         image: firstImage,
-        rating: product.rating || 4.5,
-        reviews: product.reviews || 0,
+        rating: normalizeRating(product.rating),
+        reviews: normalizeReviewCount(product.reviews),
         created_at: product.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
       };

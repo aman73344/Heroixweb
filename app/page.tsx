@@ -18,6 +18,7 @@ import { parseVariants, getVariantImages } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { StarRating } from "@/components/star-rating";
 import { getCategoryFilterOptions } from "@/lib/categories";
+import { normalizeRating, normalizeReviewCount } from "@/lib/reviews";
 
 export default function Home() {
   const router = useRouter();
@@ -56,6 +57,24 @@ export default function Home() {
     () => getCategoryFilterOptions(productList.map((p: any) => p.category)),
     [productList]
   );
+
+  // The store's real average rating, weighted by how many reviews each product
+  // has. Products with no reviews are ignored entirely, and when nothing has
+  // been reviewed yet this stays null so the hero can say "No reviews yet"
+  // rather than showing a made-up score.
+  const storeRating = useMemo(() => {
+    let weighted = 0;
+    let totalReviews = 0;
+    for (const p of productList) {
+      const reviews = normalizeReviewCount(p?.reviews);
+      const rating = normalizeRating(p?.rating);
+      if (reviews > 0 && rating > 0) {
+        weighted += rating * reviews;
+        totalReviews += reviews;
+      }
+    }
+    return totalReviews > 0 ? weighted / totalReviews : null;
+  }, [productList]);
 
   // The filter can point at a category that is no longer in the data (e.g. after
   // a rename) - fall back to showing everything rather than an empty page.
@@ -185,16 +204,20 @@ export default function Home() {
               <div className="flex gap-8 pt-4 animate-in fade-in duration-700 delay-300">
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
-                    18+
+                    {categoryOptions.length > 1 ? categoryOptions.length - 1 : 0}+
                   </p>
                   <p className="text-sm text-muted-foreground">Categories</p>
                 </div>
+                {/* The average is computed from real reviews. When no product has
+                    been rated yet, it says so instead of claiming a 4.8 score. */}
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
-                    4.8 ★
+                    {storeRating
+                      ? `${storeRating.toFixed(1)} ★`
+                      : "No reviews yet"}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Customer Rating
+                    {storeRating ? "Customer Rating" : "Be the first to review"}
                   </p>
                 </div>
                 <div className="group cursor-pointer">

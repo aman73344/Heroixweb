@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { splitVariantImageSuffix, parseVariants, formatVariantsForStorage } from './variants';
+import { normalizeRating, normalizeReviewCount } from './reviews';
 
 // Kept as an offline reference of the original seed catalogue. Supabase is the
 // live source of truth, so this list is intentionally not used at runtime.
@@ -130,8 +131,8 @@ export async function saveProducts(productsToSave: any[]): Promise<void> {
           category: p.category || 'Anime',
           stock: p.stock || 0,
           image: p.images?.[0] || p.image || '/placeholder.jpg',
-          rating: p.rating || 4.5,
-          reviews: p.reviews || 0,
+          rating: normalizeRating(p.rating),
+          reviews: normalizeReviewCount(p.reviews),
           created_at: p.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
@@ -201,8 +202,8 @@ export async function addProductToSupabase(product: any): Promise<boolean> {
       stock: product.stock || 0,
       image: product.image || '/placeholder-product.png',
       images: product.images || ['/placeholder-product.png'],
-      rating: product.rating || 4.5,
-      reviews: product.reviews || 0,
+      rating: normalizeRating(product.rating),
+      reviews: normalizeReviewCount(product.reviews),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };

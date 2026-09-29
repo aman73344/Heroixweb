@@ -26,7 +26,7 @@ export async function GET() {
       category: 'Test',
       stock: 10,
       image: '/placeholder.jpg',
-      rating: 4.5,
+      rating: 0,
       reviews: 0
     };
 

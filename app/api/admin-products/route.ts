@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdminApi } from '@/lib/admin-guard';
+import { normalizeRating, normalizeReviewCount } from '@/lib/reviews';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
@@ -44,8 +45,8 @@ export async function POST(request: NextRequest) {
         image_urls: product.image_urls || [product.image],
         features: product.features || [],
         variants: variantsValue,
-        rating: product.rating || 4.5,
-        reviews: product.reviews || 0,
+        rating: normalizeRating(product.rating),
+        reviews: normalizeReviewCount(product.reviews),
         created_at: product.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString()
       };

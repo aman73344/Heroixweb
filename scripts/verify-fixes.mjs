@@ -111,5 +111,36 @@ if (real) {
   check('a real product with 4+ designs exists', false);
 }
 
+// 7) No invented ratings anywhere: the shared normalisers must never return a
+//    flattering default, and no source file may still write `|| 4.5`.
+const { normalizeRating, normalizeReviewCount, hasRealRating } = await import('../lib/reviews.ts');
+check('missing rating -> 0, never 4.5', normalizeRating(null) === 0 && normalizeRating(undefined) === 0);
+check('NaN/garbage rating -> 0', normalizeRating('abc') === 0 && normalizeRating(NaN) === 0);
+check('out-of-range rating clamped', normalizeRating(9) === 5 && normalizeRating(-3) === 0);
+check('valid rating kept', normalizeRating(4.8) === 4.8 && normalizeRating('4.5') === 4.5);
+check('missing reviews -> 0', normalizeReviewCount(null) === 0 && normalizeReviewCount(-1) === 0);
+check(
+  'rating without reviews is NOT treated as real (the old "4.5 (0)")',
+  hasRealRating(4.5, 0) === false
+);
+check('real rating with reviews is kept', hasRealRating(4.8, 12) === true);
+
+// Source-level guard: no `|| 4.5` rating default may come back.
+const { execSync } = await import('node:child_process');
+let leftovers = '';
+try {
+  leftovers = execSync(
+    'git grep -n "rating: .*|| 4.5" -- "*.ts" "*.tsx" "*.js" || echo NONE',
+    { encoding: 'utf8' }
+  );
+} catch {
+  leftovers = 'NONE';
+}
+check(
+  'no "rating: ... || 4.5" default left in source',
+  !leftovers.includes('|| 4.5'),
+  leftovers.includes('|| 4.5') ? leftovers.trim() : 'none'
+);
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

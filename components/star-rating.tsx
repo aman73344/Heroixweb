@@ -1,4 +1,5 @@
 import { Star } from "lucide-react";
+import { hasRealRating, normalizeRating, normalizeReviewCount } from "@/lib/reviews";
 
 /**
  * The one place ratings are drawn, so the home grid, the keychain page and the
@@ -24,15 +25,12 @@ export function StarRating({
   className?: string;
   showCount?: boolean;
 }) {
-  const numericRating = Number(rating);
-  const numericReviews = Number(reviews);
-  const value = Number.isFinite(numericRating)
-    ? Math.min(5, Math.max(0, numericRating))
-    : 0;
-  const reviewCount = Number.isFinite(numericReviews) && numericReviews > 0 ? numericReviews : 0;
-  const hasReviews = reviewCount > 0;
-  // With no reviews the stars stay empty - showing filled stars for a score that
-  // no customer has given is misleading.
+  const value = normalizeRating(rating);
+  const reviewCount = normalizeReviewCount(reviews);
+  // A score is only shown when it is backed by real reviews. Filled stars for a
+  // product nobody has rated (rating 4.5 / reviews 0) is exactly the fake
+  // "4.5 (0)" this component replaced.
+  const hasReviews = hasRealRating(rating, reviews);
   const shownValue = hasReviews ? value : 0;
   const fullStars = Math.floor(shownValue);
   const hasHalf = shownValue - fullStars >= 0.25;

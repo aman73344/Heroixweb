@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Send, X, Star } from "lucide-react";
+import { hasRealRating, normalizeRating } from "@/lib/reviews";
 
 interface QuickReply {
   text: string;
@@ -200,13 +201,17 @@ export function ChatModal({ open, onClose }: ChatModalProps) {
                               <span className="text-sm font-bold text-accent">
                                 Rs {product.price}
                               </span>
-                              {product.rating && (
+                              {hasRealRating(product.rating, (product as any).reviews) ? (
                                 <div className="flex items-center gap-1">
                                   <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
                                   <span className="text-xs">
-                                    {product.rating}
+                                    {normalizeRating(product.rating)}
                                   </span>
                                 </div>
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground">
+                                  No reviews yet
+                                </span>
                               )}
                             </div>
                           </div>

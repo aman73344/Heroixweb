@@ -56,7 +56,7 @@ export default function ProductsPage() {
     price: 0,
     category: "Anime",
     stock: 0,
-    rating: 4.5,
+    rating: 0,
     reviews: 0,
     images: [],
   });
@@ -554,7 +554,7 @@ export default function ProductsPage() {
         price: 0,
         category: "Anime",
         stock: 0,
-        rating: 4.5,
+        rating: 0,
         reviews: 0,
         images: [],
       });
@@ -639,7 +639,7 @@ export default function ProductsPage() {
               price: 0,
               category: "Anime",
               stock: 0,
-              rating: 4.5,
+              rating: 0,
               reviews: 0,
               images: [],
             });
@@ -741,16 +741,20 @@ export default function ProductsPage() {
                 step="0.1"
                 min="0"
                 max="5"
-                value={form.rating}
+                value={form.rating || ''}
                 onChange={(e) =>
                   setForm({
                     ...form,
                     rating: Math.min(5, Math.max(0, parseFloat(e.target.value) || 0)),
                   })
                 }
-                placeholder="4.5"
+                placeholder="0 - leave empty if no rating"
                 className="bg-background/50 border-border"
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Leave empty when customers have not rated this yet - the store
+                shows &quot;No reviews yet&quot; instead of inventing a score.
+              </p>
             </div>
 
             <div>
@@ -1175,7 +1179,7 @@ export default function ProductsPage() {
                     price: 0,
                     category: "Anime",
                     stock: 0,
-                    rating: 4.5,
+                    rating: 0,
                     reviews: 0,
                     images: [],
                   });

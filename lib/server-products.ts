@@ -1,5 +1,6 @@
 import { getProductsFromSupabase } from './db';
 import { supabase } from './supabase';
+import { normalizeRating, normalizeReviewCount } from './reviews';
 
 export interface Product {
   id: string;
@@ -41,8 +42,8 @@ export async function saveServerProducts(products: Product[]): Promise<boolean> 
         category: p.category,
         stock: p.stock || 0,
         image: firstImage,
-        rating: p.rating || 4.5,
-        reviews: p.reviews || 0,
+        rating: normalizeRating(p.rating),
+        reviews: normalizeReviewCount(p.reviews),
         // These must be carried through: an upsert that omits them wipes every
         // design/picture the admin has uploaded for the product.
         ...(p.features ? { features: p.features } : {}),
@@ -78,8 +79,8 @@ export async function addServerProduct(product: Product): Promise<boolean> {
       category: product.category,
       stock: product.stock || 0,
       image: firstImage,
-      rating: product.rating || 4.5,
-      reviews: product.reviews || 0,
+      rating: normalizeRating(product.rating),
+      reviews: normalizeReviewCount(product.reviews),
       created_at: product.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString()
     };

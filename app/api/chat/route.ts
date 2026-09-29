@@ -4,6 +4,7 @@ import { getServerProducts } from '@/lib/server-products';
 import { getOrders, addOrder, AdminOrder } from '@/lib/orders-store';
 import { verifyStockAvailability, decrementStockForOrder } from '@/lib/db';
 import { NAYAPAY_ACCOUNT_NAME, NAYAPAY_ACCOUNT_NUMBER, HEROIX_WHATSAPP_DISPLAY } from '@/lib/store-config';
+import { normalizeRating } from '@/lib/reviews';
 
 interface OrderItem {
   product: string;
@@ -105,7 +106,7 @@ async function getProductContext(): Promise<any[]> {
         category: p.category,
         price: p.price,
         description: p.description || p.name,
-        rating: p.rating || 4.5,
+        rating: normalizeRating(p.rating),
         ...(p.stock !== null && p.stock !== undefined
           ? { stock: Number(p.stock) || 0 }
           : {})
