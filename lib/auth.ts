@@ -26,6 +26,22 @@ export function isAdminLoginConfigured(): boolean {
   return getAdminEmails().length > 0 && getAdminPassword() !== null;
 }
 
+/**
+ * Names of the environment variables that are missing or blank, so the login
+ * screen can say exactly what to set instead of a vague "not configured".
+ * Only variable NAMES are returned - never any value.
+ */
+export function getAdminConfigProblems(): string[] {
+  const problems: string[] = [];
+  if (getAdminEmails().length === 0) problems.push('ADMIN_EMAIL');
+  if (!getAdminPassword()) problems.push('ADMIN_PASSWORD');
+  const secret = (process.env.ADMIN_SESSION_SECRET || '').trim();
+  if (secret.length < 16) {
+    problems.push(secret ? 'ADMIN_SESSION_SECRET (must be 16+ characters)' : 'ADMIN_SESSION_SECRET');
+  }
+  return problems;
+}
+
 // Length + content comparison without early exit.
 function safeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

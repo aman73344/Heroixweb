@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isAdminLoginConfigured, validateAdminCredentials } from '@/lib/auth';
+import {
+  getAdminConfigProblems,
+  isAdminLoginConfigured,
+  validateAdminCredentials,
+} from '@/lib/auth';
 import {
   ADMIN_COOKIE_NAME,
   ADMIN_SESSION_MAX_AGE,
@@ -46,8 +50,18 @@ export async function POST(request: NextRequest) {
   }
 
   if (!isAdminLoginConfigured()) {
+    // Name the exact variables that are missing. This is almost always the real
+    // cause of "the server did not allow it" on the deployed site.
+    const missing = getAdminConfigProblems();
     return NextResponse.json(
-      { error: 'Admin login is not configured on the server.' },
+      {
+        error: 'Admin login is not configured on the server.',
+        missingEnvVars: missing,
+        hint:
+          'Set these in Vercel (Project > Settings > Environment Variables) for ALL ' +
+          'environments, then redeploy: ' +
+          (missing.length ? missing.join(', ') : 'ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_SESSION_SECRET'),
+      },
       { status: 503 }
     );
   }

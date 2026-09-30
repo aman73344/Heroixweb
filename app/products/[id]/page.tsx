@@ -8,13 +8,13 @@ import { Card } from "@/components/ui/card";
 import {
   ShoppingCart,
   ChevronLeft,
-  ChevronRight,
   Sparkles,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { getProducts } from "@/lib/db";
 import { parseVariants, getVariantImages, getVariantPrice, hasOwnVariantPrice, ProductVariant } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
+import { ProductGallery } from "@/components/product-gallery";
 import { StarRating } from "@/components/star-rating";
 import Link from "next/link";
 
@@ -184,8 +184,6 @@ export default function ProductPage() {
   const safeImageIndex =
     currentImageIndex >= 0 && currentImageIndex < activeImages.length ? currentImageIndex : 0;
 
-  const displayedImage = activeImages[safeImageIndex] || '/placeholder.jpg';
-
   // Clicking a design selects it and shows its first picture. Clicking the same
   // design again clears the selection, so the page goes back to the product.
   const selectDesign = (variant: ProductVariant) => {
@@ -230,20 +228,8 @@ export default function ProductPage() {
     });
   };
 
-  // Arrows/dots only move through the pictures currently on show (the selected
-  // design's own pictures, or the product's photos). They NEVER clear the design -
-  // only the "Back to ..." button does that.
-  const goToPreviousImage = () => {
-    setCurrentImageIndex(
-      safeImageIndex <= 0 ? Math.max(activeImages.length - 1, 0) : safeImageIndex - 1
-    );
-  };
-
-  const goToNextImage = () => {
-    setCurrentImageIndex(
-      safeImageIndex >= activeImages.length - 1 ? 0 : safeImageIndex + 1
-    );
-  };
+  // The arrows, dots and swipe handling live in <ProductGallery>, which owns
+  // its own browser state so hook order stays stable across loading/404.
 
   return (
     <div className="min-h-screen bg-background">
@@ -295,53 +281,36 @@ export default function ProductPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             {/* Left side - Product Images */}
             <div className="space-y-6">
-              <div className="relative h-96 bg-card/50 overflow-hidden group flex items-center justify-center">
-                <img
-                  src={displayedImage}
-                  alt={activeVariantObj ? `${product.name} - ${activeVariantObj.name}` : product.name}
-                  className="w-full h-full object-contain transition-all duration-300"
-                />
-
-                {/* This badge ties the displayed picture to its design. It only shows
-                    up after the customer has actually clicked that design. */}
-                {activeVariantObj && (
-                  <div className="absolute top-3 left-3 bg-accent text-accent-foreground text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg max-w-[70%]">
-                    <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">{activeVariantObj.name}</span>
-                    <button
-                      type="button"
-                      onClick={clearDesign}
-                      title="Back to the main product picture"
-                      aria-label="Back to the main product picture"
-                      className="shrink-0 opacity-80 hover:opacity-100"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-                
-                {/* Left Arrow */}
-                {activeImages.length > 1 && (
-                  <button
-                    onClick={goToPreviousImage}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
-                    aria-label="Previous image"
-                  >
-                    <ChevronLeft className="w-6 h-6" />
-                  </button>
-                )}
-                
-                {/* Right Arrow */}
-                {activeImages.length > 1 && (
-                  <button
-                    onClick={goToNextImage}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all opacity-0 group-hover:opacity-100"
-                    aria-label="Next image"
-                  >
-                    <ChevronRight className="w-6 h-6" />
-                  </button>
-                )}
-              </div>
+              {/* Pictures are preloaded in the DOM (no re-download per tap) and the arrows
+                are always visible on phones. */}
+              <ProductGallery
+                images={activeImages}
+                index={safeImageIndex}
+                onIndexChange={setCurrentImageIndex}
+                alt={
+                  activeVariantObj ? `${product.name} - ${activeVariantObj.name}` : product.name
+                }
+                className="h-96"
+                overlay={
+                  /* This badge ties the displayed picture to its design. It only
+                     shows after the customer has clicked that design. */
+                  activeVariantObj ? (
+                    <div className="absolute top-3 left-3 bg-accent text-accent-foreground text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg max-w-[70%] z-10">
+                      <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{activeVariantObj.name}</span>
+                      <button
+                        type="button"
+                        onClick={clearDesign}
+                        title="Back to the main product picture"
+                        aria-label="Back to the main product picture"
+                        className="shrink-0 opacity-80 hover:opacity-100"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : null
+                }
+              />
 
               {/* Counter - shows which picture is on screen. With a design picked it
                   also shows that design's name; this only happens after a click. */}

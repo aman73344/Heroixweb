@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export interface VariantPicture {
@@ -39,22 +39,56 @@ export function ProductImageCarousel({
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   // Support both an images array and a single image.
-  let imageList: string[] = [];
-  if (images && images.length > 0) {
-    imageList = images.filter(Boolean);
-  } else if (productImage) {
-    imageList = [productImage];
-  }
+  const baseImages: string[] =
+    images && images.length > 0
+      ? images.filter(Boolean)
+      : productImage
+        ? [productImage]
+        : [];
 
   // Append the design pictures that are not already in the list.
-  const variantPictures = variantImages.filter((v) => v.image && !imageList.includes(v.image));
-  imageList = [...imageList, ...variantPictures.map((v) => v.image)];
+  const variantPictures = variantImages.filter((v) => v.image && !baseImages.includes(v.image));
+
+  // Memoised: a new array on every render would make the preload effect below
+  // fire constantly and keep re-downloading pictures.
+  const imageList: string[] = useMemo(
+    () => [...baseImages, ...variantPictures.map((v) => v.image)],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [images, productImage, variantImages]
+  );
 
   const hasMultipleImages = imageList.length > 1;
   const displayImage = imageList[currentImageIndex] || null;
   const currentVariantLabel = displayImage
     ? variantPictures.find((v) => v.image === displayImage)?.name || ""
     : "";
+
+  // --- Mobile / slow-network fixes -------------------------------------------
+  // Every picture is rendered (stacked) instead of swapping a single <img> src.
+  // Swapping src forces a fresh network request per tap, which is what made the
+  // arrows feel like they "lagged". Keeping them in the DOM lets the browser
+  // fetch them up front, so switching is instant.
+  const [loaded, setLoaded] = useState<Record<number, boolean>>({});
+  const touchStartX = useRef<number | null>(null);
+
+  // The picture list can change (product/design switch), so keep the index valid.
+  useEffect(() => {
+    if (currentImageIndex > imageList.length - 1) setCurrentImageIndex(0);
+  }, [imageList.length, currentImageIndex]);
+
+  // Preload the neighbours so the next/previous tap is instant.
+  useEffect(() => {
+    if (!hasMultipleImages || typeof window === "undefined") return;
+    const neighbours = [
+      imageList[(currentImageIndex + 1) % imageList.length],
+      imageList[(currentImageIndex - 1 + imageList.length) % imageList.length],
+    ];
+    for (const src of neighbours) {
+      if (!src) continue;
+      const img = new window.Image();
+      img.src = src;
+    }
+  }, [currentImageIndex, hasMultipleImages, imageList]);
 
   const goToPrevious = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -66,22 +100,62 @@ export function ProductImageCarousel({
     setCurrentImageIndex((prev) => (prev === imageList.length - 1 ? 0 : prev + 1));
   };
 
+  // Swipe left/right, which is the natural gesture on a phone.
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartX.current;
+    const end = e.changedTouches[0]?.clientX;
+    touchStartX.current = null;
+    if (start === null || end === undefined) return;
+    const delta = end - start;
+    // A small threshold so a tap is not mistaken for a swipe.
+    if (Math.abs(delta) > 45 && hasMultipleImages) {
+      if (delta < 0) {
+        setCurrentImageIndex((prev) => (prev === imageList.length - 1 ? 0 : prev + 1));
+      } else {
+        setCurrentImageIndex((prev) => (prev === 0 ? imageList.length - 1 : prev - 1));
+      }
+    }
+  };
+
   return (
-    <div className={`relative ${heightClass} bg-card/50 overflow-hidden group flex items-center justify-center`}>
+    <div
+      className={`relative ${heightClass} bg-card/50 overflow-hidden group flex items-center justify-center`}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       {displayImage ? (
         <>
-          <img
-            src={displayImage}
-            alt={productName}
-            className="w-full h-full object-contain"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-              (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
-            }}
-          />
-          <div className="absolute inset-0 flex items-center justify-center text-6xl font-black text-accent/30 hidden">
-            ★
-          </div>
+          {/* All pictures, stacked. Only the active one is visible, so there is
+              no re-download when the customer taps an arrow. */}
+          {imageList.map((src, idx) => (
+            <img
+              key={`${src}-${idx}`}
+              src={src}
+              alt={idx === currentImageIndex ? productName : ""}
+              aria-hidden={idx !== currentImageIndex}
+              // The first picture is what the customer sees first: fetch it ASAP.
+              loading={idx === 0 ? "eager" : "lazy"}
+              fetchPriority={idx === 0 ? "high" : "auto"}
+              decoding="async"
+              onLoad={() =>
+                setLoaded((prev) => (prev[idx] ? prev : { ...prev, [idx]: true }))
+              }
+              className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-200 ${
+                idx === currentImageIndex ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+              style={{ zIndex: idx === currentImageIndex ? 1 : 0 }}
+            />
+          ))}
+
+          {/* Spinner while the active picture is still downloading. */}
+          {loaded[currentImageIndex] === false && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1]">
+              <div className="h-8 w-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
+            </div>
+          )}
 
           {/* Which design is on screen */}
           {currentVariantLabel && (
@@ -98,22 +172,25 @@ export function ProductImageCarousel({
 
           {hasMultipleImages && (
             <>
+              {/* Always visible on touch devices: a phone has no hover, so the old
+                  opacity-0 + group-hover meant the arrows were never tappable.
+                  On desktop they still fade in on hover. */}
               <button
                 onClick={goToPrevious}
-                className="absolute left-2 top-1/2 -translate-y-1/2 bg-accent/90 hover:bg-accent text-accent-foreground p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10"
+                className="absolute left-1 sm:left-2 top-1/2 -translate-y-1/2 bg-accent/90 hover:bg-accent text-accent-foreground p-2 rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-300 z-10 shadow-lg active:scale-95"
                 aria-label="Previous image"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <button
                 onClick={goToNext}
-                className="absolute right-2 top-1/2 -translate-y-1/2 bg-accent/90 hover:bg-accent text-accent-foreground p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10"
+                className="absolute right-1 sm:right-2 top-1/2 -translate-y-1/2 bg-accent/90 hover:bg-accent text-accent-foreground p-2 rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-300 z-10 shadow-lg active:scale-95"
                 aria-label="Next image"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
 
-              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2">
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2 z-10">
                 {imageList.map((_, idx) => (
                   <button
                     key={idx}
@@ -124,7 +201,7 @@ export function ProductImageCarousel({
                     className={`w-2 h-2 rounded-full transition-all ${
                       idx === currentImageIndex
                         ? "bg-accent w-6"
-                        : "bg-white/50 hover:bg-white/80"
+                        : "bg-white/70 hover:bg-white/90"
                     }`}
                     aria-label={`Go to image ${idx + 1}`}
                   />

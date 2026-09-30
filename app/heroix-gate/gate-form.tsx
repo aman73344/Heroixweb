@@ -15,10 +15,12 @@ export function GateForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [hint, setHint] = useState('');
 
   async function handleLogin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError('');
+    setHint('');
     setIsLoading(true);
 
     try {
@@ -31,7 +33,24 @@ export function GateForm() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        setError(data.error || 'Login failed');
+        // 503 = the server is missing admin env vars; 429 = too many tries.
+        // Both used to show the same vague "Login failed".
+        if (response.status === 503) {
+          setError(
+            data.hint
+              ? `Admin login is not set up on this server. Missing: ${
+                  Array.isArray(data.missingEnvVars) && data.missingEnvVars.length
+                    ? data.missingEnvVars.join(', ')
+                    : 'admin environment variables'
+                }`
+              : 'Admin login is not set up on this server yet.'
+          );
+          setHint(data.hint || '');
+        } else if (response.status === 429) {
+          setError(data.error || 'Too many attempts. Please try again later.');
+        } else {
+          setError(data.error || 'Login failed');
+        }
         setIsLoading(false);
         return;
       }
@@ -39,7 +58,7 @@ export function GateForm() {
       router.replace('/admin');
       router.refresh();
     } catch {
-      setError('An error occurred. Please try again.');
+      setError('Could not reach the server. Check your connection and try again.');
       setIsLoading(false);
     }
   }
@@ -59,8 +78,9 @@ export function GateForm() {
 
         <form onSubmit={handleLogin} className="space-y-4">
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2 rounded-lg text-sm">
-              {error}
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-2 rounded-lg text-sm space-y-1">
+              <p className="font-semibold">{error}</p>
+              {hint && <p className="text-xs text-red-300/80">{hint}</p>}
             </div>
           )}
 
