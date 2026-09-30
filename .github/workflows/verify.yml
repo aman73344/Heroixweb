@@ -36,12 +36,13 @@ jobs:
       - name: Reserve-stock tests
         run: npm run test:stock
 
+      # The browser check renders real pages, so the build needs a Supabase URL
+      # to inline. Dummy values keep the run hermetic and offline: the
+      # catalogue fetch fails, but hydration and routing - the things this
+      # check exists to catch - are still exercised.
       - name: Build
         run: npm run build
         env:
-          # The browser check below renders real pages; a missing Supabase URL
-          # would only produce noise in the catalogue fetch, so the dummy value
-          # keeps the run hermetic and offline.
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy-anon-key
 
@@ -55,3 +56,16 @@ jobs:
             sleep 2
           done
           npm run test:pages -- http://127.0.0.1:3210
+
+      # Read-only pre-flight for supabase/migrations/001_harden_rls.sql.
+      #
+      # It only READS the live database, so it is safe, but it is still an
+      # explicit opt-in rather than part of `npm run verify`: a pre-flight
+      # failure means the migration is not safe to apply, and that must be a
+      # deliberate signal, not something a routine run trips by accident.
+      - name: Migration 001 pre-flight (read-only)
+        continue-on-error: true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: npm run test:migration

@@ -13,6 +13,7 @@
     "test:security": "node scripts/security-check.mjs",
     "test:stock": "node scripts/test-reserve-stock.mjs",
     "test:pages": "node scripts/verify-pages.mjs",
+    "test:migration": "node scripts/migration-preflight.mjs",
     "verify": "npm run typecheck && npm run test:security && npm run test:stock"
   },
   "dependencies": {
