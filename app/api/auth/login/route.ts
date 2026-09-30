@@ -9,44 +9,20 @@ import {
   ADMIN_SESSION_MAX_AGE,
   createAdminSessionToken,
 } from '@/lib/admin-session';
+import { rateLimit, rateLimitResponse, resetRateLimit, peekRateLimit, clientKey, RATE_LIMITS } from '@/lib/rate-limit';
 
-// Small in-memory throttle so the admin password cannot be brute forced.
-const WINDOW_MS = 10 * 60 * 1000;
-const MAX_ATTEMPTS = 8;
-const attempts = new Map<string, { count: number; resetAt: number }>();
-
-function clientKey(request: NextRequest): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  return forwarded?.split(',')[0]?.trim() || 'local';
-}
-
-function isBlocked(key: string): boolean {
-  const entry = attempts.get(key);
-  if (!entry) return false;
-  if (entry.resetAt <= Date.now()) {
-    attempts.delete(key);
-    return false;
-  }
-  return entry.count >= MAX_ATTEMPTS;
-}
-
-function registerFailure(key: string) {
-  const entry = attempts.get(key);
-  if (!entry || entry.resetAt <= Date.now()) {
-    attempts.set(key, { count: 1, resetAt: Date.now() + WINDOW_MS });
-    return;
-  }
-  entry.count += 1;
-}
+// Brute-force protection now lives in the shared limiter (lib/rate-limit.ts) so
+// every protected endpoint uses one implementation. It is still an in-process
+// counter, so it is per instance - see the note in lib/rate-limit.ts.
 
 export async function POST(request: NextRequest) {
   const key = clientKey(request);
 
-  if (isBlocked(key)) {
-    return NextResponse.json(
-      { error: 'Too many attempts. Please try again later.' },
-      { status: 429 }
-    );
+  // Peek at the bucket WITHOUT consuming an attempt, so a legitimate admin can
+  // still log in after previous failures from the same IP (shared NAT/Wi-Fi).
+  const existing = peekRateLimit(request, { ...RATE_LIMITS.login, key });
+  if (!existing.ok) {
+    return rateLimitResponse(existing, 'Too many attempts. Please try again later.');
   }
 
   if (!isAdminLoginConfigured()) {
@@ -84,7 +60,12 @@ export async function POST(request: NextRequest) {
   }
 
   if (!validateAdminCredentials(email, password)) {
-    registerFailure(key);
+    // Only a WRONG password counts toward the limit, and this is the only place
+    // an attempt is consumed.
+    const attempt = rateLimit(request, { ...RATE_LIMITS.login, key });
+    if (!attempt.ok) {
+      return rateLimitResponse(attempt, 'Too many attempts. Please try again later.');
+    }
     // Same message for a wrong email and a wrong password.
     return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
   }
@@ -97,7 +78,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  attempts.delete(key);
+  // Correct password: clear the failure history for this IP.
+  resetRateLimit(request, RATE_LIMITS.login.bucket, key);
 
   const response = NextResponse.json({
     success: true,

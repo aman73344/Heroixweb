@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerProducts, saveServerProducts, deleteServerProduct } from '@/lib/server-products';
-import { supabase } from '@/lib/supabase';
+import { adminSupabase } from '@/lib/supabase-admin';
 import { normalizeRating, normalizeReviewCount } from '@/lib/reviews';
+import { requireAdminApi } from '@/lib/admin-guard';
+import { rateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
+
+// GET is public: the storefront reads the catalogue through here.
+// POST mutates the catalogue, so it must never run for an anonymous caller.
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,6 +36,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // Catalogue writes are admin-only. This endpoint previously accepted an
+  // unauthenticated {"action":"delete"} and could delete any product.
+  const unauthorized = await requireAdminApi();
+  if (unauthorized) return unauthorized;
+
+  const limited = rateLimit(request, RATE_LIMITS.productWrites);
+  if (!limited.ok) return rateLimitResponse(limited);
+
   try {
     const body = await request.json();
     const { action, products, product } = body;
@@ -58,7 +72,7 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await (supabase as any)
+      const { error } = await (adminSupabase as any)
         .from('products')
         .upsert([productData], { onConflict: 'id' });
 

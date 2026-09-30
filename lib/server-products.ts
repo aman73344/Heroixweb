@@ -1,5 +1,7 @@
 import { getProductsFromSupabase } from './db';
 import { supabase } from './supabase';
+// Writes use the service key; reads keep the anon client (public catalogue).
+import { adminSupabase } from './supabase-admin';
 import { normalizeRating, normalizeReviewCount } from './reviews';
 
 export interface Product {
@@ -53,7 +55,7 @@ export async function saveServerProducts(products: Product[]): Promise<boolean> 
       };
     });
     
-    const { error } = await (supabase as any)
+    const { error } = await (adminSupabase as any)
       .from('products')
       .upsert(cleanedProducts, { onConflict: 'id' });
 
@@ -85,7 +87,7 @@ export async function addServerProduct(product: Product): Promise<boolean> {
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await (supabase as any)
+    const { error } = await (adminSupabase as any)
       .from('products')
       .upsert([productData], { onConflict: 'id' });
 
@@ -102,7 +104,7 @@ export async function addServerProduct(product: Product): Promise<boolean> {
 
 export async function deleteServerProduct(productId: string): Promise<boolean> {
   try {
-    const { error } = await (supabase as any)
+    const { error } = await adminSupabase
       .from('products')
       .delete()
       .eq('id', productId);

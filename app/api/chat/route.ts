@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateLLMResponse, ChatMessage } from '@/lib/llm';
 import { getServerProducts } from '@/lib/server-products';
-import { getOrders, addOrder, AdminOrder } from '@/lib/orders-store';
-import { verifyStockAvailability, decrementStockForOrder } from '@/lib/db';
+import { addOrderIdempotent, AdminOrder } from '@/lib/orders-store';
+import { reserveStock, releaseStock } from '@/lib/db';
+import { priceOrderFromDatabase } from '@/lib/order-pricing';
 import { NAYAPAY_ACCOUNT_NAME, NAYAPAY_ACCOUNT_NUMBER, HEROIX_WHATSAPP_DISPLAY } from '@/lib/store-config';
 import { normalizeRating } from '@/lib/reviews';
+import { rateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 
 interface OrderItem {
   product: string;
@@ -383,18 +385,7 @@ async function handleOrderFlow(
   
   if (orderState.confirmed === false && (lower.includes('yes') || lower.includes('confirm') || lower.includes('haan') || lower.includes('ha'))) {
     orderState.confirmed = true;
-    
-    let totalItems = 0;
-    let subtotal = 0;
-    for (const item of orderState.items) {
-      totalItems += item.quantity;
-      subtotal += item.price * item.quantity;
-    }
-    const shipping = 280;
-    const total = subtotal + shipping;
-    
-    const itemsList = orderState.items.map(i => `${i.quantity}x ${i.product || 'Unknown'}`).join(', ');
-    
+
     if (!orderState.name || orderState.name === 'Unknown') {
       sessionState.orderStep = 'name';
       return `I need your name to place the order. What's your name please?`;
@@ -415,29 +406,48 @@ async function handleOrderFlow(
       return `What's your full delivery address?`;
     }
     
-    const orders = await getOrders();
-    const existingIds = new Set(orders.map(o => o.id));
-    let orderId = `ORD-${Date.now().toString().slice(-6)}`;
-    
-    let counter = 0;
-    while (existingIds.has(orderId)) {
-      counter++;
-      orderId = `ORD-${Date.now().toString().slice(-6)}${counter}`;
+    // Order ids are UUIDs generated here, never Date.now() (which collided when
+    // two chat sessions confirmed in the same millisecond).
+    const orderId = crypto.randomUUID();
+
+    // ---- TRUSTED PRICING ---------------------------------------------------
+    // The prices held in the chat session were read from the catalogue earlier in
+    // the conversation and could be stale. They are recomputed from the database
+    // at confirmation time, so nothing price-related is trusted from the session.
+    let priced;
+    try {
+      priced = await priceOrderFromDatabase(
+        orderState.items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+        }))
+      );
+    } catch (error: any) {
+      console.error('Chat order pricing failed:', error);
+      return `⚠️ I could not load the current prices for your order (${error?.message || 'please try again'}).\n\nNothing has been charged or reserved. Please try again in a moment or contact us on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}).`;
     }
 
-    // Real stock counter - stop the order if something is out of stock.
-    const stockProblems = await verifyStockAvailability(orderState.items);
-    if (stockProblems.length > 0) {
-      const details = stockProblems
-        .map(p =>
-          p.variant
-            ? `"${p.name} (${p.variant})" has ${p.available} left (you asked for ${p.requested})`
-            : `"${p.name}" has ${p.available} left (you asked for ${p.requested})`
-        )
+    const totalItems = priced.itemCount;
+    const total = priced.total;
+    const itemsList = priced.items
+      .map((i) => `${i.quantity}x ${i.product}`)
+      .join(', ');
+
+    // ---- ATOMIC STOCK RESERVATION -----------------------------------------
+    const reservation = await reserveStock(
+      priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
+    );
+
+    if (!reservation.ok) {
+      const details = reservation.failures
+        .map((f) => {
+          const item = priced.items.find((i) => i.productId === f.productId);
+          return `"${item ? item.product : 'An item'}" has ${f.available} left (you asked for ${f.requested})`;
+        })
         .join('; ');
       return `⚠️ Sorry, insufficient stock: ${details}.\n\nPlease reduce the quantity or choose another keychain, then reply "yes" to confirm again.`;
     }
-    
+
     const newOrder: AdminOrder = {
       id: orderId,
       date: new Date().toISOString().split('T')[0],
@@ -447,36 +457,45 @@ async function handleOrderFlow(
       address: orderState.address,
       city: orderState.city,
       items: totalItems,
-      total: total,
+      total,
       status: 'pending',
-      items_data: orderState.items.map(item => ({
-        product: item.product || 'Unknown',
-        productId: item.productId || 'unknown',
-        quantity: item.quantity,
-        price: item.price || 0
+      items_data: priced.items.map((i) => ({
+        product: i.product,
+        productId: i.productId,
+        variant: i.variant,
+        price: i.price,
+        quantity: i.quantity,
       })),
     };
-    
-    let saved = await addOrder(newOrder);
 
-    if (!saved) {
-      // One retry - a transient Supabase/network hiccup must not lose an order.
-      saved = await addOrder(newOrder);
+    // Idempotent insert. There is deliberately NO blind retry here: the previous
+    // code retried the insert once, which created a duplicate order whenever the
+    // first insert had actually succeeded but the response was lost.
+    const result = await addOrderIdempotent(newOrder);
+
+    if (!result.saved) {
+      await releaseStock(
+        priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
+      );
+      console.error('Chat order could NOT be saved:', newOrder.id);
+      return `⚠️ There was an issue saving your order. Please try again or contact support on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}).\n\nNothing has been charged.`;
     }
 
-    if (!saved) {
-      console.error('Chat order could NOT be saved:', newOrder.id, newOrder.customer, newOrder.phone);
-      return `⚠️ There was an issue saving your order. Please try again or contact support on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}).\n\nOrder details:\n📦 ${itemsList}\n💰 Total: Rs ${total}`;
+    if (result.duplicate) {
+      await releaseStock(
+        priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
+      );
     }
 
-    console.log('Chat order saved:', newOrder.id, '| customer:', newOrder.customer, '| phone:', newOrder.phone, '| total: Rs', total);
+    console.log('Chat order saved:', newOrder.id, '| total: Rs', total);
 
-    // Real stock counter - reduce stock now that the order is saved.
-    await decrementStockForOrder(newOrder.items_data || []);
-    
+    // Clear the session so a repeated "yes" cannot create a second order.
+    sessionState.orderState = { items: [] };
+    sessionState.orderStep = undefined;
+
     return `🎉 Order received!\n\n📦 Order: ${itemsList}\n💰 Total: Rs ${total}\n📍 Delivery to: ${orderState.city}\n\n🆔 Order ID: ${newOrder.id}\n\n💳 Payment: NayaPay only\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order is NOT confirmed yet — without payment the order will not move forward. Send your payment screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}); once we receive your NayaPay payment we will confirm your order on WhatsApp and it will move forward.\n\nThanks for shopping with HEROIX!`;
   }
-  
+
   const onlyThesePatterns = /only these|just these|only these 3|only this|only these ones|bas yeh|bas yehi|sirf yeh|only want these|only these ones|these three|these ones/i;
   const alsoAddPatterns = /^(also add|add also|and also|add karo|bhi|aur add|add bhi)/i;
   const excludePatterns = /exclude|remove|not want|don't want|without|nahi chahiye|nahi lena/i;
@@ -806,6 +825,17 @@ async function handleOrderFlow(
 }
 
 export async function POST(request: NextRequest) {
+  // The chat endpoint is unauthenticated and calls OpenRouter, so it is the most
+  // expensive public endpoint on the site. Throttling it bounds both database load
+  // and AI spend.
+  const limited = rateLimit(request, RATE_LIMITS.chat);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { message: "I'm getting a lot of messages right now. Please try again in a moment." },
+      { status: 429, headers: { 'Retry-After': String(limited.retryAfterSeconds) } },
+    );
+  }
+
   try {
     const body = await request.json();
     const { messages, sessionId: clientSessionId } = body as {

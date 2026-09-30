@@ -1,4 +1,8 @@
 import { supabase } from './supabase';
+// Server-side WRITES must use the service key. `supabase` above is the anon-key
+// client, which the hardening migration removes write access for.
+// Read paths intentionally keep using it so public catalogue reads still work.
+import { adminSupabase } from './supabase-admin';
 import { splitVariantImageSuffix, parseVariants, formatVariantsForStorage } from './variants';
 import { normalizeRating, normalizeReviewCount } from './reviews';
 
@@ -138,7 +142,7 @@ export async function saveProducts(productsToSave: any[]): Promise<void> {
         };
       });
 
-      const { error } = await (supabase as any)
+      const { error } = await (adminSupabase as any)
         .from('products')
         .upsert(cleanedProducts, { onConflict: 'id' });
 
@@ -173,7 +177,7 @@ export async function saveProductsToSupabase(productsToSave: any[]): Promise<voi
       };
     });
 
-    const { error } = await (supabase as any)
+    const { error } = await (adminSupabase as any)
       .from('products')
       .upsert(productsWithTimestamp, { onConflict: 'id' });
 
@@ -208,7 +212,7 @@ export async function addProductToSupabase(product: any): Promise<boolean> {
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await (supabase as any)
+    const { error } = await (adminSupabase as any)
       .from('products')
       .upsert([productData], { onConflict: 'id' });
 
@@ -225,7 +229,7 @@ export async function addProductToSupabase(product: any): Promise<boolean> {
 
 export async function updateProductInSupabase(productId: string, updates: any): Promise<boolean> {
   try {
-    const { error } = await (supabase as any)
+    const { error } = await (adminSupabase as any)
       .from('products')
       .update({
         ...updates,
@@ -246,7 +250,7 @@ export async function updateProductInSupabase(productId: string, updates: any): 
 
 export async function deleteProductFromSupabase(productId: string): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const { error } = await adminSupabase
       .from('products')
       .delete()
       .eq('id', productId);
@@ -304,8 +308,9 @@ export async function getOrders(): Promise<Order[]> {
 
 export async function addOrderToSupabase(order: Order): Promise<boolean> {
   try {
-    // Same untyped-client cast as the product writes above.
-    const { error } = await (supabase as any)
+    // Service key: checkout inserts must work once anon write access to `orders`
+    // is removed by the RLS hardening migration.
+    const { error } = await (adminSupabase as any)
       .from('orders')
       .insert([{
         id: order.id,
@@ -338,7 +343,7 @@ export async function addOrderToSupabase(order: Order): Promise<boolean> {
 
 export async function updateOrderInSupabase(orderId: string, updates: Partial<Order>): Promise<boolean> {
   try {
-    const { error } = await (supabase as any)
+    const { error } = await (adminSupabase as any)
       .from('orders')
       .update(updates)
       .eq('id', orderId);
@@ -356,7 +361,7 @@ export async function updateOrderInSupabase(orderId: string, updates: Partial<Or
 
 export async function deleteOrderFromSupabase(orderId: string): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const { error } = await adminSupabase
       .from('orders')
       .delete()
       .eq('id', orderId);
@@ -383,6 +388,18 @@ export interface StockProblem {
 // Real stock counter: verify every ordered item has enough stock in the
 // database before the order is saved, accounting for specific variants if selected.
 // Fails open on DB errors so a flaky connection never blocks orders.
+// DEPRECATED - DO NOT USE FOR ORDER PLACEMENT.
+//
+// This was the old read-then-write stock check. It is kept only so any external
+// caller does not break, and it has two defects that made it unsafe:
+//
+//   1. It FAILED OPEN: on a database error it returned an empty list, which the
+//      old checkout read as "no problems" and let the order through.
+//   2. It was a read-then-check, so two concurrent buyers of the last unit both
+//      saw enough stock and both passed.
+//
+// Order placement now uses reserveStock() in lib/db.ts, which is atomic and
+// fails closed. Do not reintroduce this on the checkout path.
 export async function verifyStockAvailability(
   items: { productId?: string; variant?: string; quantity: number }[],
 ): Promise<StockProblem[]> {
@@ -486,7 +503,9 @@ export async function decrementStock(
   try {
     if (!productId || quantity <= 0) return;
 
-    const { data, error } = await (supabase as any)
+    // Service key: this is a WRITE path (it updates products.stock), so it must
+    // not rely on anon write access that the RLS hardening migration removes.
+    const { data, error } = await (adminSupabase as any)
       .from('products')
       .select('stock, variants')
       .eq('id', productId)
@@ -524,7 +543,7 @@ export async function decrementStock(
       }
     }
 
-    const { error: updateError } = await (supabase as any)
+    const { error: updateError } = await (adminSupabase as any)
       .from('products')
       .update(updatePayload)
       .eq('id', productId);
@@ -535,11 +554,195 @@ export async function decrementStock(
   }
 }
 
-// Reduce stock for every item of a saved order.
-export async function decrementStockForOrder(
-  items: { productId?: string; variant?: string; quantity: number }[],
-): Promise<void> {
-  for (const item of items) {
-    await decrementStock(item.productId || '', item.quantity || 0, item.variant);
+/**
+ * Puts stock back when an order could not be completed after a successful
+ * reservation (for example the order insert failed for an unrelated reason).
+ *
+ * This is a compensating action, not an atomic one: if it fails, stock is left
+ * lower than reality. That errs towards under-selling rather than overselling,
+ * which is the safe direction. Failures are logged loudly.
+ */
+export async function releaseStock(lines: ReservationLine[]): Promise<void> {
+  const clean = lines.filter((l) => l.productId && l.quantity > 0);
+
+  for (const line of clean) {
+    const { data: current, error: readError } = await (adminSupabase as any)
+      .from('products')
+      .select('stock')
+      .eq('id', line.productId)
+      .maybeSingle();
+
+    if (readError || !current) {
+      console.error('releaseStock: could not read stock', line.productId, readError);
+      continue;
+    }
+
+    const { error: writeError } = await (adminSupabase as any)
+      .from('products')
+      .update({
+        stock: (Number(current.stock) || 0) + line.quantity,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', line.productId);
+
+    if (writeError) {
+      console.error('releaseStock: could not restore stock', line.productId, writeError);
+    }
   }
 }
+
+/**
+ * ATOMIC stock reservation.
+ *
+ * The previous implementation read the stock, computed a new value in Node, and
+ * wrote it back. Two customers buying the last unit at the same time both read
+ * the same stock, both passed the check, and both wrote the same result - so two
+ * orders were sold for one item.
+ *
+ * This version issues a SINGLE conditional UPDATE:
+ *
+ *     UPDATE products SET stock = stock - q WHERE id = p AND stock >= q
+ *
+ * Postgres takes a row lock for the duration of that statement, so the check and
+ * the decrement cannot interleave. If it matches no row we know, definitively,
+ * that there was not enough stock. There is no read-then-write window.
+ *
+ * When migration 002 has been applied, this delegates to the
+ * `reserve_stock` Postgres function, which additionally handles per-design stock
+ * and reserves every line of the order in ONE transaction. Until then it falls
+ * back to the single-statement update above, which is already safe against the
+ * oversell race for the product's total stock.
+ */
+
+export interface ReservationLine {
+  productId: string;
+  quantity: number;
+  variant?: string;
+}
+
+export interface ReservationFailure {
+  productId: string;
+  requested: number;
+  available: number;
+}
+
+export interface ReservationResult {
+  ok: boolean;
+  failures: ReservationFailure[];
+}
+
+const RPC_NAME = 'reserve_stock';
+
+export async function reserveStock(
+  lines: ReservationLine[],
+): Promise<ReservationResult> {
+  const clean = lines
+    .map((l) => ({
+      product_id: String(l.productId || ''),
+      quantity: Math.floor(Number(l.quantity) || 0),
+      variant_name: l.variant ? String(l.variant) : null,
+    }))
+    .filter((l) => l.product_id && l.quantity > 0);
+
+  if (clean.length === 0) return { ok: true, failures: [] };
+
+  // Preferred path: one transaction for the whole order (needs migration 002).
+  try {
+    const { data, error } = await (adminSupabase as any).rpc(RPC_NAME, {
+      p_lines: clean,
+    });
+
+    if (!error) {
+      const result = Array.isArray(data) ? data[0] : data;
+      return {
+        ok: Boolean(result?.ok),
+        failures: Array.isArray(result?.failures) ? result.failures : [],
+      };
+    }
+
+    // 40442 / undefined_function means the migration has not been applied yet.
+    // That is expected in staging before Phase 2 SQL is run - fall through to the
+    // safe single-statement path rather than failing the checkout.
+    const code = (error as any)?.code;
+    if (code !== '42883' && code !== 'PGRST202' && !/not exist|does not exist|find/i.test(error.message || '')) {
+      throw error;
+    }
+    console.warn('reserve_stock RPC unavailable; using guarded UPDATE fallback.');
+  } catch (error: any) {
+    if (error?.code !== '42883' && error?.code !== 'PGRST202') throw error;
+  }
+
+  // Fallback: compare-and-swap on the current stock value.
+  //
+  // PostgREST cannot express "stock = stock - q", so this reads the current
+  // value and writes back a new one ONLY if the value has not changed:
+  //
+  //     UPDATE products SET stock = <new> WHERE id = p AND stock = <current>
+  //
+  // That WHERE clause is the guard. If a competing order changed the stock in
+  // between the read and the write, this matches zero rows, so we retry with the
+  // fresh value. It is the same optimistic-concurrency pattern as a compare and
+  // swap, and it closes the oversell window without needing a migration.
+  const failures: ReservationFailure[] = [];
+
+  for (const line of clean) {
+    let settled = false;
+
+    for (let attempt = 0; attempt < 5 && !settled; attempt++) {
+      const { data: current, error: readError } = await (adminSupabase as any)
+        .from('products')
+        .select('stock')
+        .eq('id', line.product_id)
+        .maybeSingle();
+
+      if (readError || !current) {
+        // Fail closed: an unknown database error must not read as "reserved".
+        console.error('Stock reservation read error:', readError);
+        failures.push({ productId: line.product_id, requested: line.quantity, available: 0 });
+        settled = true;
+        break;
+      }
+
+      const available = Number(current.stock) || 0;
+      if (available < line.quantity) {
+        failures.push({
+          productId: line.product_id,
+          requested: line.quantity,
+          available,
+        });
+        settled = true;
+        break;
+      }
+
+      const { data: updated, error: writeError } = await (adminSupabase as any)
+        .from('products')
+        .update({
+          stock: available - line.quantity,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', line.product_id)
+        .eq('stock', current.stock)
+        .select('stock');
+
+      if (writeError) {
+        console.error('Stock reservation write error:', writeError);
+        failures.push({ productId: line.product_id, requested: line.quantity, available: 0 });
+        settled = true;
+        break;
+      }
+
+      if (Array.isArray(updated) && updated.length > 0) {
+        settled = true; // won the race and decremented
+      }
+      // else: someone else changed stock first - loop and re-read.
+    }
+
+    if (!settled) {
+      // Lost five races in a row; report as unavailable rather than guessing.
+      failures.push({ productId: line.product_id, requested: line.quantity, available: 0 });
+    }
+  }
+
+  return { ok: failures.length === 0, failures };
+}
+

@@ -5,8 +5,38 @@ import { requireAdminApi } from '@/lib/admin-guard';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
 
-// Admin only - this debug endpoint writes to the database.
+// DISABLED IN PRODUCTION.
+//
+// This endpoint performed a real INSERT + DELETE against the products table. It
+// existed only as a connection smoke test. It is kept in the repo for local
+// debugging but returns 410 in production so it cannot be used to write data.
+//
+// The admin session check is intentionally NOT the protection here: even a
+// hijacked admin cookie should not be able to write arbitrary rows through a
+// debug endpoint. Enable locally only by setting ALLOW_TEST_ENDPOINTS=true.
+
+export const dynamic = 'force-dynamic';
+
+const ENABLED = process.env.ALLOW_TEST_ENDPOINTS === 'true';
+
 export async function GET() {
+  if (!ENABLED) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'This debug endpoint is disabled. Set ALLOW_TEST_ENDPOINTS=true to enable it (local development only).',
+      },
+      { status: 410 },
+    );
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { success: false, error: 'Disabled in production.' },
+      { status: 410 },
+    );
+  }
+
   const unauthorized = await requireAdminApi();
   if (unauthorized) return unauthorized;
 

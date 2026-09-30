@@ -40,6 +40,14 @@ export default function CheckoutPage() {
     setIsLoading(true);
 
     try {
+      // One UUID per checkout attempt. If the request is retried, times out, or
+      // the page is refreshed and resubmitted, the server sees the same key and
+      // returns the SAME order instead of creating a second one.
+      const idempotencyKey =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `ord-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -49,23 +57,25 @@ export default function CheckoutPage() {
           phone: formData.phone,
           address: formData.address,
           city: formData.city,
+          idempotencyKey,
+          // price/total are intentionally NOT trusted by the server; it recalculates
+          // every price from the database. They are omitted entirely.
           items: items.map(item => ({
             productId: item.productId,
             product: item.variant ? `${item.name} (${item.variant})` : item.name,
             name: item.name,
             variant: item.variant || undefined,
-            price: item.price,
             quantity: item.quantity,
           })),
-          total: grandTotal,
         }),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        setOrderId(data.data.id);
-        setOrderTotal(grandTotal);
+        // The server's total is authoritative - show what it actually charged.
+        setOrderId(data.data?.id ?? '');
+        setOrderTotal(Number(data.data?.total) || 0);
         setOrderPlaced(true);
         clearCart();
       } else {

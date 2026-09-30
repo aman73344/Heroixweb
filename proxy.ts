@@ -30,6 +30,11 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
+  // NOTE: /api/products is deliberately NOT in this matcher.
+  // GET /api/products is the public catalogue read used by the storefront, and
+  // this proxy blocks a whole path for anonymous callers - adding it would break
+  // the shop. Its write path (POST) is instead protected inside the route handler
+  // with requireAdminApi(), which checks the method being called.
   matcher: [
     '/admin',
     '/admin/:path*',

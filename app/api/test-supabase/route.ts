@@ -2,8 +2,36 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { requireAdminApi } from '@/lib/admin-guard';
 
-// Admin only - this debug endpoint writes test data.
+// DISABLED IN PRODUCTION.
+//
+// This endpoint inserted and then deleted a real row in the orders table. It
+// existed only as a connection smoke test and returns 410 in production so it
+// cannot be used to write or probe order data.
+//
+// Enable locally only by setting ALLOW_TEST_ENDPOINTS=true.
+
+export const dynamic = 'force-dynamic';
+
+const ENABLED = process.env.ALLOW_TEST_ENDPOINTS === 'true';
+
 export async function GET() {
+  if (!ENABLED) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'This debug endpoint is disabled. Set ALLOW_TEST_ENDPOINTS=true to enable it (local development only).',
+      },
+      { status: 410 },
+    );
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { success: false, error: 'Disabled in production.' },
+      { status: 410 },
+    );
+  }
+
   const unauthorized = await requireAdminApi();
   if (unauthorized) return unauthorized;
 
