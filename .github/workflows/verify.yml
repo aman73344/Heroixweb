@@ -1,0 +1,57 @@
+name: verify
+
+# These run on PULL REQUESTS only, deliberately.
+#
+# The production outage this guards against passed `tsc`, passed `next build`,
+# passed every source-level security check, and still served HTTP 200 with full
+# HTML on every route while being completely dead in the browser. Only a real
+# browser could see it.
+#
+# So these gates are advisory on PRs and are NOT wired into main: a failure here
+# must never block or roll back a production deploy. Treat a red PR as "do not
+# merge", and if something does reach main broken, revert rather than fight CI.
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Security checks
+        run: npm run test:security
+
+      - name: Reserve-stock tests
+        run: npm run test:stock
+
+      - name: Build
+        run: npm run build
+        env:
+          # The browser check below renders real pages; a missing Supabase URL
+          # would only produce noise in the catalogue fetch, so the dummy value
+          # keeps the run hermetic and offline.
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy-anon-key
+
+      - name: Pages render in a real browser
+        run: |
+          npm run start -- --port 3210 &
+          # Poll rather than depending on `wait-on`, which is not a project
+          # dependency. The server needs a moment to bind before the check runs.
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3210/ > /dev/null; then break; fi
+            sleep 2
+          done
+          npm run test:pages -- http://127.0.0.1:3210

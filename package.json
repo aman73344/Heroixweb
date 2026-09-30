@@ -8,7 +8,12 @@
     "start": "next start",
     "lint": "eslint .",
     "setup-supabase": "node scripts/setup-supabase.js",
-    "test-products": "node scripts/test-products.js"
+    "test-products": "node scripts/test-products.js",
+    "typecheck": "tsc --noEmit",
+    "test:security": "node scripts/security-check.mjs",
+    "test:stock": "node scripts/test-reserve-stock.mjs",
+    "test:pages": "node scripts/verify-pages.mjs",
+    "verify": "npm run typecheck && npm run test:security && npm run test:stock"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

@@ -31,20 +31,43 @@ const cleanup = () => {
 };
 process.on('exit', cleanup);
 
+// Chrome/Edge on Windows, macOS and Linux. CI runners are Linux, so a
+// Windows-only list would make this script exit 1 everywhere except the
+// machine it was written on.
 const CHROME_CANDIDATES = [
+  // Explicit override, e.g. for a container image with Chrome somewhere custom.
+  process.env.CHROME_PATH,
+  // Windows
   join(process.env.ProgramFiles || '', 'Google/Chrome/Application/chrome.exe'),
   join(process.env['ProgramFiles(x86)'] || '', 'Google/Chrome/Application/chrome.exe'),
   join(process.env.LOCALAPPDATA || '', 'Google/Chrome/Application/chrome.exe'),
   join(process.env.ProgramFiles || '', 'Microsoft/Edge/Application/msedge.exe'),
   join(process.env['ProgramFiles(x86)'] || '', 'Microsoft/Edge/Application/msedge.exe'),
-];
-const chrome = CHROME_CANDIDATES.find((p) => p && existsSync(p));
+  // macOS
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  // Linux
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+  '/snap/bin/chromium',
+  '/usr/bin/microsoft-edge',
+].filter(Boolean);
+const chrome = CHROME_CANDIDATES.find((p) => existsSync(p));
 if (!chrome) {
-  console.error('No Chrome/Edge binary found - cannot run the browser check.');
+  console.error(
+    'No Chrome/Edge/Chromium binary found - cannot run the browser check.\n' +
+      'Set CHROME_PATH to the browser executable, or install one of the usual packages.',
+  );
   process.exit(1);
 }
 
-const PORT = 9222;
+// A fixed port would collide if two checks ever run at once (a parallel CI
+// matrix, or a dev machine that already has something on 9222), so pick a free
+// one and release it again on exit.
+const PORT = Number(process.env.CDP_PORT) || 9200 + Math.floor(Math.random() * 400);
 const chromeProc = spawn(
   chrome,
   [

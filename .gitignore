@@ -35,6 +35,17 @@ smoke-*.txt
 v-dump.txt
 proc-dump.txt
 
+# Redirects written by the local verification runs (bash/cmd `> name.txt`).
+# These are build output, not source, and were previously committed by accident.
+h_*.txt
+gate_*.txt
+prodstart.txt
+vpdet.txt
+vpf.txt
+badbuild.txt
+live_pages.txt
+g[0-9].txt
+
 # Keep npm as the single source of truth: committing a second lockfile
 # (pnpm-lock.yaml / yarn.lock) makes Vercel pick a different package manager
 # than the one used locally, which silently installs a different tree.
