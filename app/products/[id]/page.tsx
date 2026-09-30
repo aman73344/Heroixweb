@@ -16,6 +16,7 @@ import { parseVariants, getVariantImages, getVariantPrice, hasOwnVariantPrice, P
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { ProductGallery } from "@/components/product-gallery";
 import { StarRating } from "@/components/star-rating";
+import { sortProducts } from "@/lib/sorting";
 import Link from "next/link";
 
 export default function ProductPage() {
@@ -708,11 +709,13 @@ export default function ProductPage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {allProducts
-            .filter(
-              (p: any) =>
-                p.id !== product.id && p.category === product.category,
+          {/* Same ordering as the home grid: the priciest band of keychains first, so a
+            shopper scanning this page sees them high to low. */}
+          {sortProducts(
+            allProducts.filter(
+              (p: any) => p.id !== product.id && p.category === product.category
             )
+          )
             .slice(0, 6)
             .map((relatedProduct: any) => {
               // Same as the home page grid: the card cycles the product's photos AND

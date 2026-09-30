@@ -177,5 +177,47 @@ check(
   multiPriced.map((v) => v.price ?? 'none').join(',')
 );
 
+// 9) Ordering: the priciest band of keychains must come first (500-600 above
+//    400-500 above 300-350), using the cheapest price a customer can pay.
+const { sortProducts, getLowestPrice, DEFAULT_SORT } = await import('../lib/sorting.ts');
+check('default sort is Price: High to Low', DEFAULT_SORT === 'price-desc');
+
+const sortable = [
+  { id: 'a', name: 'A', price: 350 },
+  { id: 'b', name: 'B', price: 600 },
+  { id: 'c', name: 'C', price: 450 },
+  { id: 'd', name: 'D', price: 300 },
+  { id: 'e', name: 'E', price: 550 },
+];
+const desc = sortProducts(sortable, 'price-desc').map((p) => p.price);
+check(
+  '500-600 band sits above 400-500, which sits above 300-350',
+  JSON.stringify(desc) === JSON.stringify([600, 550, 450, 350, 300]),
+  desc.join(',')
+);
+check(
+  'Price: Low to High reverses it',
+  JSON.stringify(sortProducts(sortable, 'price-asc').map((p) => p.price)) ===
+    JSON.stringify([300, 350, 450, 550, 600])
+);
+check('Name: A to Z works', sortProducts(sortable, 'name').map((p) => p.id).join('') === 'abcde');
+check(
+  'sorting does not mutate the original list',
+  sortable.map((p) => p.price).join(',') === '350,600,450,300,550'
+);
+
+// A product whose designs have their own prices is placed by the cheapest one.
+const withDesignPrices = {
+  id: 'x',
+  price: 900,
+  variants: ['Design 1: 2 | price: 400', 'Design 2: 1 | price: 850'],
+};
+check('cheapest design price is used for ordering', getLowestPrice(withDesignPrices) === 400);
+check(
+  'a product with designs sorts above one priced at 300',
+  sortProducts([{ id: 'lo', price: 300 }, withDesignPrices], 'price-desc')[0].id === 'x'
+);
+check('plain products fall back to their own price', getLowestPrice({ price: 550 }) === 550);
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

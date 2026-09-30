@@ -18,11 +18,15 @@ import { parseVariants, getVariantImages, getVariantPrice } from "@/lib/variants
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { StarRating } from "@/components/star-rating";
 import { getCategoryFilterOptions } from "@/lib/categories";
+import { sortProducts, SORT_OPTIONS, DEFAULT_SORT, type SortKey } from "@/lib/sorting";
 import { normalizeRating, normalizeReviewCount, DEFAULT_RATING } from "@/lib/reviews";
 
 export default function Home() {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState("All");
+  // Default "Price: High to Low" so 500-600 Rs keychains sit above 400-500,
+  // which sit above 300-350.
+  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
   const [chatOpen, setChatOpen] = useState(false);
   const [productList, setProductList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +53,13 @@ export default function Home() {
     selectedCategory === "All"
       ? productList
       : productList.filter((p: any) => p.category === selectedCategory);
+
+  // Ordering: most expensive band first by default. Each product is placed by
+  // the cheapest price a customer can actually pay for it.
+  const sortedProducts = useMemo(
+    () => sortProducts(filteredProducts, sortKey),
+    [filteredProducts, sortKey]
+  );
 
   // "All" + every real category (Anime, Superhero, Marvel, DC, Sports, Gaming,
   // Others, plus anything else the admin has used) - so a product can never be
@@ -264,13 +275,40 @@ export default function Home() {
 
       {/* Products Grid */}
       <section id="products" className="max-w-7xl mx-auto px-4 py-16">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-foreground mb-2">
-            Featured Collection
-          </h2>
-          <p className="text-muted-foreground">
-            {loading ? "Loading..." : `${filteredProducts.length} designs in ${selectedCategory === "All" ? "all categories" : selectedCategory}`}
-          </p>
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-bold text-foreground mb-2">
+              Featured Collection
+            </h2>
+            <p className="text-muted-foreground">
+              {loading
+                ? "Loading..."
+                : `${sortedProducts.length} designs in ${selectedCategory === "All" ? "all categories" : selectedCategory}`}
+            </p>
+          </div>
+
+          {/* Ordering control. Defaults to Price: High to Low, so the priciest
+              band of keychains is listed first. */}
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="sort-keychains"
+              className="text-sm text-muted-foreground whitespace-nowrap"
+            >
+              Sort by
+            </label>
+            <select
+              id="sort-keychains"
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              className="px-3 py-2 bg-card/50 border border-border rounded-lg text-foreground text-sm focus:outline-none focus:border-accent"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {loading ? (
@@ -283,7 +321,7 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProducts.map((product: any) => {
+            {sortedProducts.map((product: any) => {
             const parsedVariants = parseVariants(product.variants, Number(product.stock) || 0);
             const hasVariants = parsedVariants.length > 0;
             const stockValue =
