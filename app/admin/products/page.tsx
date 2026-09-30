@@ -6,7 +6,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 import { Edit2, Trash2, Plus, X, Upload, Loader2, ImageIcon } from "lucide-react";
-import { getProducts } from "@/lib/db";
+// Browser-safe catalogue read. This must NOT come from `@/lib/db`, which
+// imports the server-only `lib/supabase-admin` and would throw on module
+// evaluation in the browser, breaking hydration of the whole page.
+import { getProducts } from "@/lib/catalogue";
 import { supabase } from "@/lib/supabase";
 import { parseVariants, formatVariantsForStorage, formatVariantsForTextarea, calculateEffectiveStock, getVariantImages, normalizeVariantImages, MAX_VARIANT_IMAGES, MAX_VARIANTS } from "@/lib/variants";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";

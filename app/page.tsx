@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
@@ -13,7 +13,10 @@ import { useCart } from "@/lib/cart-context";
 import { ChatModal } from "@/components/chat-modal";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getProducts } from "@/lib/db";
+// Browser-safe catalogue read. This must NOT come from `@/lib/db`, which
+// imports the server-only `lib/supabase-admin` and would throw on module
+// evaluation in the browser, breaking hydration of the whole page.
+import { getProducts } from "@/lib/catalogue";
 import { parseVariants, getVariantImages, getVariantPrice } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { StarRating } from "@/components/star-rating";
@@ -220,7 +223,7 @@ export default function Home() {
                     store's default rating. */}
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
-                    {storeRating.toFixed(1)} ★
+                    {storeRating.toFixed(1)} ?
                   </p>
                   <p className="text-sm text-muted-foreground">Customer Rating</p>
                 </div>

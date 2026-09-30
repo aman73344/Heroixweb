@@ -11,7 +11,10 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
-import { getProducts } from "@/lib/db";
+// Browser-safe catalogue read. This must NOT come from `@/lib/db`, which
+// imports the server-only `lib/supabase-admin` and would throw on module
+// evaluation in the browser, breaking hydration of the whole page.
+import { getProducts } from "@/lib/catalogue";
 import { parseVariants, getVariantImages, getVariantPrice, hasOwnVariantPrice, ProductVariant } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { ProductGallery } from "@/components/product-gallery";

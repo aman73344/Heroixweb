@@ -7,7 +7,7 @@
 // This script NEVER contacts production and NEVER writes to any database.
 // Run: node scripts/security-check.mjs
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 
@@ -296,6 +296,170 @@ for (const rel of WRITE_FILES) {
   check(
     'chat no longer blindly retries the order insert',
     !/saved = await addOrder\(/.test(chat),
+  );
+}
+
+// --- 11. Server-only modules must be unreachable from the browser -------------
+// THE PRODUCTION OUTAGE THIS PREVENTS
+//
+// `lib/db.ts` imports `adminSupabase` from `lib/supabase-admin.ts`, which throws
+// on purpose when evaluated in a browser. Three components are marked "use
+// client" and need the product list. When they imported `getProducts` from
+// `lib/db.ts`, the browser evaluated that whole module graph, the guard fired
+// at MODULE EVALUATION, and the storefront died with "This page couldn't load"
+// BEFORE React could hydrate.
+//
+// Why nothing caught it: the server render still worked (there
+// `typeof window === 'undefined'`), `next build` still passed, `tsc` still
+// passed, and every route still returned HTTP 200 with full HTML. Only a real
+// browser could see the failure.
+//
+// So this walks the import graph of EVERY "use client" file and fails if
+// `lib/supabase-admin.ts` is reachable - directly or through any number of
+// intermediate modules. A grep for a direct import would not have caught the
+// real bug, which arrived via a re-export chain.
+{
+  const SERVER_ONLY = 'lib/supabase-admin.ts';
+  const SRC_DIRS = ['app', 'components', 'hooks', 'lib'];
+  const EXTS = ['.ts', '.tsx', '.js', '.jsx'];
+
+  // `relative()` rather than string slicing: `root` has no trailing separator,
+  // so slicing by `root.length + 1` silently produced paths that matched
+  // nothing and the check passed with "0 client modules scanned".
+  const toRel = (abs) => relative(root, abs).split(sep).join('/');
+
+  const isSource = (rel) =>
+    SRC_DIRS.some((d) => rel.startsWith(`${d}/`)) && EXTS.some((e) => rel.endsWith(e));
+
+  const readIfPresent = (rel) => {
+    try {
+      return readFileSync(join(root, rel), 'utf8');
+    } catch {
+      return null;
+    }
+  };
+
+  /** Every source file under the app/component/lib trees. */
+  const walk = (dir, acc = []) => {
+    for (const entry of readdirSync(dir)) {
+      if (entry === 'node_modules' || entry.startsWith('.')) continue;
+      const abs = join(dir, entry);
+      if (statSync(abs).isDirectory()) walk(abs, acc);
+      else {
+        const rel = toRel(abs);
+        if (isSource(rel)) acc.push(rel);
+      }
+    }
+    return acc;
+  };
+
+  const allFiles = walk(root);
+  const cache = new Map();
+  const sourceOf = (rel) => {
+    if (!cache.has(rel)) cache.set(rel, readIfPresent(rel));
+    return cache.get(rel);
+  };
+
+  const isClientComponent = (src) =>
+    /^\s*(?:\uFEFF)?\s*["']use client["']/.test(src);
+
+  /** Resolve a relative or `@/` import to a repo-relative file, or null. */
+  const resolveImport = (fromRel, spec) => {
+    let base;
+    if (spec.startsWith('@/')) base = spec.slice(2);
+    else if (spec.startsWith('.')) {
+      const dir = fromRel.slice(0, fromRel.lastIndexOf('/'));
+      const stack = dir ? dir.split('/') : [];
+      for (const part of spec.split('/')) {
+        if (part === '.' || part === '') continue;
+        else if (part === '..') stack.pop();
+        else stack.push(part);
+      }
+      base = stack.join('/');
+    } else return null; // a package import cannot reach our source tree
+
+    if (EXTS.some((e) => base.endsWith(e))) {
+      return sourceOf(base) === null ? null : base;
+    }
+    for (const e of EXTS) {
+      const candidate = `${base}${e}`;
+      if (sourceOf(candidate) !== null) return candidate;
+    }
+    const idx = `${base}/index`;
+    for (const e of EXTS) {
+      const candidate = `${idx}${e}`;
+      if (sourceOf(candidate) !== null) return candidate;
+    }
+    return null;
+  };
+
+  const importSpecifiers = (src) => {
+    const specs = [];
+    const re = /(?:^|\n)\s*import\s+(?:[\s\S]*?\sfrom\s+)?["']([^"']+)["']/g;
+    let m;
+    while ((m = re.exec(src))) specs.push(m[1]);
+    // `export ... from '...'` re-exports are edges too - the original bug
+    // travelled through one of these.
+    const reExport = /(?:^|\n)\s*export\s+(?:\*|\{[\s\S]*?\})\s*from\s+["']([^"']+)["']/g;
+    while ((m = reExport.exec(src))) specs.push(m[1]);
+    return specs;
+  };
+
+  /** Every path from `entry` to the server-only module, if one exists. */
+  const pathToServerOnly = (entry) => {
+    const seen = new Set();
+    const walkGraph = (rel, trail) => {
+      if (rel === SERVER_ONLY) return [...trail, rel];
+      if (seen.has(rel)) return null;
+      seen.add(rel);
+      const src = sourceOf(rel);
+      if (src === null) return null;
+      for (const spec of importSpecifiers(src)) {
+        const next = resolveImport(rel, spec);
+        if (!next) continue;
+        const found = walkGraph(next, [...trail, rel]);
+        if (found) return found;
+      }
+      return null;
+    };
+    return walkGraph(entry, []);
+  };
+
+  const clientFiles = allFiles.filter((f) => {
+    const src = sourceOf(f);
+    return src !== null && isClientComponent(src);
+  });
+
+  const offenders = [];
+  for (const file of clientFiles) {
+    const chain = pathToServerOnly(file);
+    if (chain) offenders.push({ file, chain });
+  }
+
+  check(
+    `"use client" modules cannot reach ${SERVER_ONLY}`,
+    offenders.length === 0,
+    offenders.length === 0
+      ? `${clientFiles.length} client modules scanned`
+      : offenders.map((o) => `${o.file} -> ${o.chain.join(' -> ')}`).join('; '),
+  );
+
+  // The split must actually be in place, not just the absence of the import.
+  check(
+    'browser catalogue reads live in lib/catalogue.ts',
+    existsSync(join(root, 'lib', 'catalogue.ts')) &&
+      /export async function getProducts/.test(read('lib/catalogue.ts')),
+  );
+  check(
+    'lib/catalogue.ts does not import the server-only admin client',
+    !/from\s+['"].\/supabase-admin['"]/.test(read('lib/catalogue.ts')),
+  );
+  check(
+    'no "use client" file imports getProducts from lib/db',
+    !clientFiles.some((f) => {
+      const src = sourceOf(f) ?? '';
+      return /import\s*\{[^}]*getProducts[^}]*\}\s*from\s*['"]@\/lib\/db['"]/.test(src);
+    }),
   );
 }
 

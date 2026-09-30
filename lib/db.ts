@@ -29,98 +29,20 @@ const DEFAULT_PRODUCTS = [
   { id: 'football-trophy', name: 'Football Trophy', description: 'Golden football trophy keychain for sports enthusiasts', price: 449, category: 'Sports', image: '/placeholder.jpg', images: ['/placeholder.jpg'], inStock: true, rating: 4.5, reviews: 178, stock: 50, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
 ];
 
-export async function getProducts(): Promise<any[]> {
-  try {
-    // features/variants are optional columns added by
-    // scripts/add-features-column.sql - skip any that don't exist yet so the
-    // store keeps working before the script has been run.
-    const OPTIONAL_COLUMNS = ['features', 'variants'];
-    const BASE_COLUMNS = [
-      'id', 'name', 'category', 'price', 'stock', 'description',
-      'image', 'image_urls', 'rating', 'reviews',
-    ];
-    let selectedOptional = [...OPTIONAL_COLUMNS];
-    let data: any = null;
-    let error: any = null;
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const columns = [...BASE_COLUMNS, ...selectedOptional].join(', ');
-      // Supabase/PostgREST caps a single response at its own row limit, so the
-      // rows are paged in. Without this a product beyond the first page (there
-      // are more than 50 in the table) simply never loads, which looks like
-      // "my product/design vanished after a reload".
-      const pageSize = 200;
-      const page: any[] = [];
-      for (let from = 0; from < 2000; from += pageSize) {
-        const chunk: any = await (supabase as any)
-          .from('products')
-          .select(columns)
-          .order('created_at', { ascending: false })
-          .range(from, from + pageSize - 1);
-
-        if (chunk.error) {
-          error = chunk.error;
-          break;
-        }
-
-        const rows = Array.isArray(chunk.data) ? chunk.data : [];
-        page.push(...rows);
-        if (rows.length < pageSize) break;
-      }
-
-      data = page;
-      if (!error || (error as any).code !== '42703') break;
-
-      const match =
-        (error as any).message.match(/column\s+([\w.]+)\s+does not exist/) ||
-        (error as any).message.match(/column "([^"]+)"/);
-      const missing = match?.[1]?.split('.').pop();
-
-      if (missing && selectedOptional.includes(missing)) {
-        selectedOptional = selectedOptional.filter((c) => c !== missing);
-        continue;
-      }
-
-      if (attempt === 0) {
-        // Couldn't identify the column - drop all optional columns and retry
-        selectedOptional = [];
-        continue;
-      }
-
-      break;
-    }
-
-    if (error) {
-      console.error('Supabase error:', error);
-      return [];
-    }
-    
-    if (data && data.length > 0) {
-      return data.map((p: any) => {
-        let images: string[] = ['/placeholder.jpg'];
-        
-        // Use image_urls array if available
-        if (p.image_urls && Array.isArray(p.image_urls) && p.image_urls.length > 0) {
-          images = p.image_urls;
-        } else if (p.image) {
-          images = [p.image];
-        }
-        
-        return {
-          ...p,
-          image: images[0],
-          images: images,
-          inStock: p.stock > 0
-        };
-      });
-    }
-    
-    return [];
-  } catch (error) {
-    console.error('Error fetching from Supabase:', error);
-    return [];
-  }
-}
+// The browser-facing catalogue read lives in ./catalogue, NOT here.
+//
+// This module imports `adminSupabase`, and `lib/supabase-admin.ts` throws on
+// purpose when it is evaluated in a browser. "use client" components that need
+// the product list must import from `@/lib/catalogue`; importing it from here
+// drags the server-only module into the client bundle and takes the storefront
+// down with a module-evaluation error before React hydrates.
+//
+// It is re-exported below purely so existing SERVER-side callers
+// (lib/server-products.ts, scripts/*) keep working unchanged.
+export { getProducts } from './catalogue';
+// Imported (not just re-exported) because the server-side helpers below still
+// call getProducts() directly.
+import { getProducts } from './catalogue';
 
 export async function saveProducts(productsToSave: any[]): Promise<void> {
   const maxRetries = 2;
