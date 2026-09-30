@@ -199,10 +199,11 @@ export async function POST(request: NextRequest) {
     const result = await addOrderIdempotent(newOrder);
 
     if (!result.saved) {
-      // The order was not stored, so give the reserved stock back.
-      await releaseStock(
-        priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
-      );
+      // The order was not stored, so give the reserved stock back. This releases
+      // `reservation.reserved` - exactly the lines this call actually decremented
+      // - rather than re-deriving them from the request, which would credit back
+      // stock for lines that were never taken.
+      await releaseStock(reservation.reserved);
       return NextResponse.json(
         { success: false, error: 'We could not save your order. Please try again.' },
         { status: 500 }
@@ -212,9 +213,7 @@ export async function POST(request: NextRequest) {
     if (result.duplicate) {
       // We lost a race with an identical submission. That order already exists and
       // its own submission reserved the stock, so return the stock we just took.
-      await releaseStock(
-        priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
-      );
+      await releaseStock(reservation.reserved);
       const stored = await findOrderById(orderId);
       return NextResponse.json(
         { success: true, message: 'Order already received', data: stored ?? newOrder, duplicate: true },

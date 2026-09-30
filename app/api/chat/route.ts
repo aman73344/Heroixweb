@@ -434,8 +434,12 @@ async function handleOrderFlow(
       .join(', ');
 
     // ---- ATOMIC STOCK RESERVATION -----------------------------------------
+    // Same contract as POST /api/orders: reserve every line, and if any line
+    // fails the whole reservation is rolled back inside reserveStock and no
+    // order is created. `variant` is passed through so a design-specific line
+    // reserves against the same stock the checkout route reserves against.
     const reservation = await reserveStock(
-      priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
+      priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity, variant: i.variant }))
     );
 
     if (!reservation.ok) {
@@ -474,17 +478,16 @@ async function handleOrderFlow(
     const result = await addOrderIdempotent(newOrder);
 
     if (!result.saved) {
-      await releaseStock(
-        priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
-      );
+      // Releases `reservation.reserved` - exactly the lines this call actually
+      // decremented - rather than re-deriving them from the priced items, which
+      // would credit back stock for lines that were never taken.
+      await releaseStock(reservation.reserved);
       console.error('Chat order could NOT be saved:', newOrder.id);
       return `⚠️ There was an issue saving your order. Please try again or contact support on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}).\n\nNothing has been charged.`;
     }
 
     if (result.duplicate) {
-      await releaseStock(
-        priced.items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
-      );
+      await releaseStock(reservation.reserved);
     }
 
     console.log('Chat order saved:', newOrder.id, '| total: Rs', total);

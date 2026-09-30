@@ -249,6 +249,49 @@ for (const rel of WRITE_FILES) {
     db.includes('Fail closed'),
   );
 
+  // The all-or-nothing rollback. reserveStock returns ok:false with no order
+  // created, so any line it DID decrement has to be put back inside
+  // reserveStock - otherwise a partial failure drains stock permanently.
+  check(
+    'reserveStock records the lines it actually decremented',
+    /reserved\.push\(\s*toReservationLine\(line\)\s*\)/.test(db),
+  );
+  check(
+    'a failed reservation rolls its reserved lines back',
+    // The success branch must return early, and the failure path must hand
+    // `reserved` to the restore helper and report whatever is STILL held.
+    /if \(failures\.length === 0\)[\s\S]*?return \{ ok: true, failures, reserved \};[\s\S]*?restoreLines\(\s*client,\s*reserved\s*[\s\S]*?reserved:\s*stillHeld\s*\}/.test(db),
+  );
+  check(
+    'stock restore is guarded by the same compare-and-swap',
+    /async function restoreLines[\s\S]*?\.eq\('stock', current\.stock\)/.test(db),
+  );
+  check(
+    'no placeholder rollback writes stock 0',
+    !/update\(\{\s*stock:\s*0\s*\}\)/.test(db),
+    'a placeholder rollback would zero out live stock',
+  );
+
+  // Both order paths must release exactly what they reserved. Re-deriving the
+  // line list from the request would credit back stock never taken.
+  for (const [src, label] of [
+    [orders, 'POST /api/orders'],
+    [chat, 'chat order flow'],
+  ]) {
+    check(
+      `${label} releases reservation.reserved`,
+      /releaseStock\(\s*reservation\.reserved\s*\)/.test(src),
+    );
+    check(
+      `${label} does not re-derive the release list from the request`,
+      !/releaseStock\(\s*priced\.items\.map/.test(src),
+    );
+    check(
+      `${label} returns before inserting when the reservation fails`,
+      /if \(!reservation\.ok\)[\s\S]{0,600}return/.test(src),
+    );
+  }
+
   // The chat retry that used to create duplicate orders is gone.
   check(
     'chat no longer blindly retries the order insert',

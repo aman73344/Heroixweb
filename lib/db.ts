@@ -555,43 +555,6 @@ export async function decrementStock(
 }
 
 /**
- * Puts stock back when an order could not be completed after a successful
- * reservation (for example the order insert failed for an unrelated reason).
- *
- * This is a compensating action, not an atomic one: if it fails, stock is left
- * lower than reality. That errs towards under-selling rather than overselling,
- * which is the safe direction. Failures are logged loudly.
- */
-export async function releaseStock(lines: ReservationLine[]): Promise<void> {
-  const clean = lines.filter((l) => l.productId && l.quantity > 0);
-
-  for (const line of clean) {
-    const { data: current, error: readError } = await (adminSupabase as any)
-      .from('products')
-      .select('stock')
-      .eq('id', line.productId)
-      .maybeSingle();
-
-    if (readError || !current) {
-      console.error('releaseStock: could not read stock', line.productId, readError);
-      continue;
-    }
-
-    const { error: writeError } = await (adminSupabase as any)
-      .from('products')
-      .update({
-        stock: (Number(current.stock) || 0) + line.quantity,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', line.productId);
-
-    if (writeError) {
-      console.error('releaseStock: could not restore stock', line.productId, writeError);
-    }
-  }
-}
-
-/**
  * ATOMIC stock reservation.
  *
  * The previous implementation read the stock, computed a new value in Node, and
@@ -612,6 +575,11 @@ export async function releaseStock(lines: ReservationLine[]): Promise<void> {
  * and reserves every line of the order in ONE transaction. Until then it falls
  * back to the single-statement update above, which is already safe against the
  * oversell race for the product's total stock.
+ *
+ * ALL-OR-NOTHING: if any line of a multi-line order cannot be reserved, every
+ * line that WAS already reserved is put back before this function returns. That
+ * rollback lives HERE rather than in the callers, because a caller that forgets
+ * it silently drains stock with no order ever created.
  */
 
 export interface ReservationLine {
@@ -629,14 +597,150 @@ export interface ReservationFailure {
 export interface ReservationResult {
   ok: boolean;
   failures: ReservationFailure[];
+  /**
+   * Lines whose stock was actually decremented. On a failed reservation this
+   * is normally empty, because reserveStock() rolls them back before
+   * returning. It is exposed so callers can verify, and for the rare case
+   * where the rollback itself failed.
+   */
+  reserved: ReservationLine[];
+}
+
+/** Injected for tests; defaults to the real service-role client. */
+export interface ReservationDeps {
+  client?: any;
 }
 
 const RPC_NAME = 'reserve_stock';
 
+/** Shape sent to the reserve_stock RPC / used by the fallback loop. */
+interface CleanLine {
+  product_id: string;
+  quantity: number;
+  variant_name: string | null;
+}
+
+/** Maps the internal snake_case line back to the public ReservationLine shape. */
+function toReservationLine(line: CleanLine): ReservationLine {
+  return {
+    productId: line.product_id,
+    quantity: line.quantity,
+    // `undefined`, not `null`: callers branch on truthiness, and a null would
+    // serialise into a `"variant": null` field they do not expect.
+    ...(line.variant_name ? { variant: line.variant_name } : {}),
+  };
+}
+
+/**
+ * Restores the given lines and returns the ones it could NOT put back.
+ *
+ * Each line is a compare-and-swap run in reverse: read the current stock, write
+ * back `current + quantity`, and only commit that write if the row still holds
+ * the value that was read. A concurrent order that changed the row in between
+ * is therefore never clobbered - our write matches zero rows, so we re-read and
+ * retry.
+ *
+ * The guard is what makes this safe to run while other checkouts are in
+ * flight. Without it this is a classic lost update: read 10, another order
+ * takes 3, then write 10 + qty instead of 7 + qty. That invents stock and is
+ * precisely the oversell this module exists to prevent.
+ *
+ * This is a compensating action, not an atomic one. A line that still cannot be
+ * restored after every attempt is RETURNED to the caller rather than silently
+ * dropped, so "stock is still held for this line" is always visible. Stock left
+ * low means under-selling, which is the safe direction to fail in.
+ */
+async function restoreLines(
+  client: any,
+  lines: ReservationLine[],
+): Promise<ReservationLine[]> {
+  const unrestored: ReservationLine[] = [];
+
+  // Newest reservation first, so a partially completed rollback leaves the
+  // most recent holds in place - the ones a retry is most likely to re-request.
+  for (const line of [...lines].reverse()) {
+    if (!line?.productId || !(line.quantity > 0)) continue;
+    let settled = false;
+
+    for (let attempt = 0; attempt < 5 && !settled; attempt++) {
+      const { data: current, error: readError } = await (client as any)
+        .from('products')
+        .select('stock')
+        .eq('id', line.productId)
+        .maybeSingle();
+
+      if (readError || !current) {
+        console.error('Stock restore read error:', line.productId, readError);
+        break;
+      }
+
+      const currentStock = Number(current.stock) || 0;
+
+      const { data: updated, error: writeError } = await (client as any)
+        .from('products')
+        .update({
+          stock: currentStock + line.quantity,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', line.productId)
+        .eq('stock', current.stock)
+        .select('stock');
+
+      if (writeError) {
+        console.error('Stock restore write error:', line.productId, writeError);
+        break;
+      }
+
+      if (Array.isArray(updated) && updated.length > 0) {
+        settled = true;
+      }
+      // else: a concurrent order moved the stock - re-read and try again.
+    }
+
+    if (!settled) {
+      unrestored.push(line);
+    }
+  }
+
+  return unrestored;
+}
+
+/**
+ * Puts stock back when an order could not be completed after a successful
+ * reservation, OR when a multi-line reservation only partly succeeded.
+ *
+ * This is a compensating action, not an atomic one: if it fails, stock is left
+ * lower than reality. That errs towards under-selling rather than overselling,
+ * which is the safe direction. Failures are logged loudly.
+ */
+export async function releaseStock(
+  lines: ReservationLine[],
+  deps: ReservationDeps = {},
+): Promise<void> {
+  const client = deps.client ?? adminSupabase;
+  const clean = lines.filter((l) => l.productId && l.quantity > 0);
+
+  // Shared with reserveStock's rollback so both paths restore stock under the
+  // same compare-and-swap guard. The previous version here read the stock and
+  // wrote back current + qty with no `.eq('stock', ...)` guard, which is a lost
+  // update whenever another checkout decrements the same row in between.
+  const unrestored = await restoreLines(client, clean);
+
+  for (const line of unrestored) {
+    console.error(
+      'releaseStock: could not restore stock',
+      line.productId,
+      line.quantity,
+    );
+  }
+}
+
 export async function reserveStock(
   lines: ReservationLine[],
+  deps: ReservationDeps = {},
 ): Promise<ReservationResult> {
-  const clean = lines
+  const client = deps.client ?? adminSupabase;
+  const clean: CleanLine[] = lines
     .map((l) => ({
       product_id: String(l.productId || ''),
       quantity: Math.floor(Number(l.quantity) || 0),
@@ -644,11 +748,16 @@ export async function reserveStock(
     }))
     .filter((l) => l.product_id && l.quantity > 0);
 
-  if (clean.length === 0) return { ok: true, failures: [] };
+  if (clean.length === 0) return { ok: true, failures: [], reserved: [] };
+
+  // Lines whose stock this call has actually decremented. Tracked so a partial
+  // failure can be undone before returning, and so a fully successful call can
+  // report exactly what it holds.
+  const reserved: ReservationLine[] = [];
 
   // Preferred path: one transaction for the whole order (needs migration 002).
   try {
-    const { data, error } = await (adminSupabase as any).rpc(RPC_NAME, {
+    const { data, error } = await (client as any).rpc(RPC_NAME, {
       p_lines: clean,
     });
 
@@ -657,6 +766,9 @@ export async function reserveStock(
       return {
         ok: Boolean(result?.ok),
         failures: Array.isArray(result?.failures) ? result.failures : [],
+        // The RPC validates every line before writing any UPDATE, so a failed
+        // reservation never leaves partial state.
+        reserved: result?.ok ? clean.map(toReservationLine) : [],
       };
     }
 
@@ -689,7 +801,7 @@ export async function reserveStock(
     let settled = false;
 
     for (let attempt = 0; attempt < 5 && !settled; attempt++) {
-      const { data: current, error: readError } = await (adminSupabase as any)
+      const { data: current, error: readError } = await (client as any)
         .from('products')
         .select('stock')
         .eq('id', line.product_id)
@@ -714,7 +826,7 @@ export async function reserveStock(
         break;
       }
 
-      const { data: updated, error: writeError } = await (adminSupabase as any)
+      const { data: updated, error: writeError } = await (client as any)
         .from('products')
         .update({
           stock: available - line.quantity,
@@ -733,6 +845,9 @@ export async function reserveStock(
 
       if (Array.isArray(updated) && updated.length > 0) {
         settled = true; // won the race and decremented
+        // Recorded only now, on the branch that actually changed the row, so a
+        // rollback can never credit back stock this call did not take.
+        reserved.push(toReservationLine(line));
       }
       // else: someone else changed stock first - loop and re-read.
     }
@@ -743,6 +858,31 @@ export async function reserveStock(
     }
   }
 
-  return { ok: failures.length === 0, failures };
+  if (failures.length === 0) {
+    // Every line is held, so the caller now owns the responsibility to release
+    // them (via releaseStock) if the order itself is not saved.
+    return { ok: true, failures, reserved };
+  }
+
+  // ALL-OR-NOTHING: the caller gets no order when this returns ok:false, so
+  // every line reserved by THIS call has to be put back here. It cannot be left
+  // to the caller, because a caller that forgets silently drains stock with no
+  // order ever created.
+  //
+  // Only `reserved` is restored - the lines in `failures` were never taken, and
+  // crediting them back would invent stock.
+  const stillHeld = await restoreLines(client, reserved);
+  for (const line of stillHeld) {
+    console.error(
+      'reserveStock: rollback could not restore stock',
+      line.productId,
+      line.quantity,
+    );
+  }
+
+  // `reserved` is reported as what is STILL held after the rollback, which is
+  // normally empty. If a rollback itself failed the caller is told, rather than
+  // the loss being swallowed.
+  return { ok: false, failures, reserved: stillHeld };
 }
 
