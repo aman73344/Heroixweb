@@ -8,6 +8,7 @@ import {
   MessageCircle,
   ShoppingCart,
   RefreshCw,
+  ChevronRight,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { ChatModal } from "@/components/chat-modal";
@@ -94,6 +95,18 @@ export default function Home() {
       setSelectedCategory("All");
     }
   }, [selectedCategory, categoryOptions]);
+
+  // Tapping a card has to feel instant on a phone: the route is warmed while
+  // the finger is still on its way down, and the product page reuses the
+  // catalogue this grid already downloaded (see lib/catalogue.ts) instead of
+  // showing a spinner for a second network round-trip.
+  const prefetchProduct = (id: string) => {
+    router.prefetch(`/products/${id}`);
+  };
+
+  const openProduct = (product: any) => {
+    router.push(`/products/${product.id}`);
+  };
 
   const handleAddToCart = (product: any) => {
     // If product has variants, direct to the product page so customer can pick their design & see stock
@@ -223,7 +236,7 @@ export default function Home() {
                     store's default rating. */}
                 <div className="group cursor-pointer">
                   <p className="text-2xl font-bold text-accent group-hover:scale-110 transition-transform">
-                    {storeRating.toFixed(1)} ?
+                    {storeRating.toFixed(1)}
                   </p>
                   <p className="text-sm text-muted-foreground">Customer Rating</p>
                 </div>
@@ -347,8 +360,15 @@ export default function Home() {
             return (
             <Card
               key={product.id}
-              className="group border-border hover:border-accent transition-all duration-300 overflow-hidden cursor-pointer"
-              onClick={() => router.push(`/products/${product.id}`)}
+              // `hover:` never renders on a phone, so the "this is tappable"
+              // cue is kept permanently there through `touch:`. `active:`
+              // confirms the press instantly, and `touch-manipulation` stops
+              // the browser holding a tap back to see whether it is a
+              // double-tap-zoom (that wait is what made taps feel dead).
+              className="group border-border hover:border-accent touch:border-accent transition-all duration-300 overflow-hidden cursor-pointer touch-manipulation select-none active:border-accent active:scale-[0.98] active:duration-75"
+              onClick={() => openProduct(product)}
+              onPointerEnter={() => prefetchProduct(product.id)}
+              onPointerDown={() => prefetchProduct(product.id)}
             >
               {/* Product Image Carousel - cycles the product's photos AND all of its
                   design pictures, so every design is visible right in the grid. */}
@@ -381,7 +401,8 @@ export default function Home() {
                           <img
                             src={pic.image}
                             alt={pic.name}
-                            className="w-full h-full object-cover"
+                            draggable={false}
+                            className="w-full h-full object-cover select-none [-webkit-user-drag:none]"
                           />
                         </button>
                       );
@@ -392,7 +413,7 @@ export default function Home() {
               {/* Product Info */}
               <div className="p-4 space-y-4">
                 <div>
-                  <h3 className="font-bold text-lg text-foreground group-hover:text-accent transition-colors">
+                  <h3 className="font-bold text-lg text-foreground group-hover:text-accent touch:text-accent transition-colors">
                     {product.name}
                   </h3>
                   <p className="text-sm text-muted-foreground mt-1">
@@ -426,6 +447,13 @@ export default function Home() {
                           : isLowStock
                             ? `Only ${stockValue} left!`
                             : "In Stock"}
+                    </p>
+                    {/* A phone never hovers, so say what a tap does. Hidden on
+                        pointer devices, where the hover highlight already
+                        makes it obvious. */}
+                    <p className="hidden touch:inline-flex items-center gap-0.5 mt-1 text-xs font-semibold text-accent">
+                      View details
+                      <ChevronRight className="w-3 h-3" />
                     </p>
                   </div>
                   <Button

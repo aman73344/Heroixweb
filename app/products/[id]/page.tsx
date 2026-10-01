@@ -14,7 +14,7 @@ import { useCart } from "@/lib/cart-context";
 // Browser-safe catalogue read. This must NOT come from `@/lib/db`, which
 // imports the server-only `lib/supabase-admin` and would throw on module
 // evaluation in the browser, breaking hydration of the whole page.
-import { getProducts } from "@/lib/catalogue";
+import { getProducts, getCatalogueCache } from "@/lib/catalogue";
 import { parseVariants, getVariantImages, getVariantPrice, hasOwnVariantPrice, ProductVariant } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { ProductGallery } from "@/components/product-gallery";
@@ -35,10 +35,25 @@ export default function ProductPage() {
 
   useEffect(() => {
     if (!productId) return;
-    
+
+    // The grid the customer just tapped already downloaded these rows, so show
+    // the product immediately rather than after a full-screen spinner, and let
+    // the network refresh it in the background.
+    const cached = getCatalogueCache();
+    const cachedProduct = cached?.find(
+      (p: any) => p.id === productId || String(p.id) === productId
+    );
+    if (cachedProduct) {
+      setAllProducts(cached || []);
+      setProduct(cachedProduct);
+      setSelectedVariant(null);
+      setLoading(false);
+    }
+
     const loadProduct = async () => {
       try {
-        setLoading(true);
+        // Only show the spinner when there is nothing cached to draw yet.
+        if (!cachedProduct) setLoading(true);
         const loadedProducts = await getProducts();
         setAllProducts(loadedProducts || []);
         
@@ -65,7 +80,9 @@ export default function ProductPage() {
         }
       } catch (error) {
         console.error("Failed to load product:", error);
-        setProduct({ error: "Product not found" });
+        // A failed refresh must not replace a product we can already show with
+        // a 404 - on a phone with a flaky connection that is very visible.
+        if (!cachedProduct) setProduct({ error: "Product not found" });
       } finally {
         setLoading(false);
       }
@@ -738,8 +755,10 @@ export default function ProductPage() {
               return (
               <Card
                 key={relatedProduct.id}
-                className="group border-border hover:border-accent transition-all duration-300 overflow-hidden cursor-pointer"
+                className="group border-border hover:border-accent touch:border-accent transition-all duration-300 overflow-hidden cursor-pointer touch-manipulation select-none active:border-accent active:scale-[0.98] active:duration-75"
                 onClick={() => router.push(`/products/${relatedProduct.id}`)}
+                onPointerEnter={() => router.prefetch(`/products/${relatedProduct.id}`)}
+                onPointerDown={() => router.prefetch(`/products/${relatedProduct.id}`)}
               >
                 <ProductImageCarousel
                   images={relatedProduct.image_urls || relatedProduct.images}
@@ -771,7 +790,8 @@ export default function ProductPage() {
                             <img
                               src={pic.image}
                               alt={pic.name}
-                              className="w-full h-full object-cover"
+                              draggable={false}
+                              className="w-full h-full object-cover select-none [-webkit-user-drag:none]"
                             />
                           </button>
                         );
@@ -781,7 +801,7 @@ export default function ProductPage() {
                 )}
 
                 <div className="p-4 space-y-4">
-                  <h3 className="font-bold text-lg text-foreground group-hover:text-accent transition-colors">
+                  <h3 className="font-bold text-lg text-foreground group-hover:text-accent touch:text-accent transition-colors">
                     {relatedProduct.name}
                   </h3>
                   <p className="text-sm text-muted-foreground mt-1">

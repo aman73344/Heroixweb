@@ -29,6 +29,28 @@
 
 import { supabase } from './supabase';
 
+// --- Browser catalogue cache -------------------------------------------------
+// The home grid and the product page need the SAME rows. Without a cache, every
+// time a customer taps a grid card the product page re-downloads the whole
+// catalogue from Supabase and shows a full-screen spinner first - on a phone
+// that reads as "the tap didn't work". The cache lets the product page paint the
+// product the grid already has, then refresh in the background.
+//
+// In-memory only, browser session only, and short-lived: it is a speed-up, never
+// a source of truth.
+let cache: { products: any[]; at: number } | null = null;
+const CACHE_TTL_MS = 60_000;
+
+/** The last successful read, while it is still fresh. Null when stale/empty. */
+export function getCatalogueCache(): any[] | null {
+  return cache && Date.now() - cache.at < CACHE_TTL_MS ? cache.products : null;
+}
+
+/** Forces the next read to go to the network. */
+export function clearCatalogueCache(): void {
+  cache = null;
+}
+
 export async function getProducts(): Promise<any[]> {
   try {
     // features/variants are optional columns added by
@@ -96,7 +118,7 @@ export async function getProducts(): Promise<any[]> {
     }
 
     if (data && data.length > 0) {
-      return data.map((p: any) => {
+      const products = data.map((p: any) => {
         let images: string[] = ['/placeholder.jpg'];
 
         // Use image_urls array if available
@@ -113,6 +135,11 @@ export async function getProducts(): Promise<any[]> {
           inStock: p.stock > 0
         };
       });
+
+      // Remembered so the page a customer taps next paints straight away
+      // instead of re-downloading every row first.
+      cache = { products, at: Date.now() };
+      return products;
     }
 
     return [];

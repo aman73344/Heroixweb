@@ -3,6 +3,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* A phone has no hover state: Tailwind compiles `hover:` to `@media (hover:
+   hover)`, so a hover-only cue (highlighted border, accent title) never renders
+   on touch and the customer cannot tell that a grid card is tappable. The
+   `touch:` variant applies those same cues permanently on touch devices, while
+   pointer devices keep the original hover behaviour. */
+@custom-variant touch (@media (hover: none));
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -121,6 +128,14 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Phones flash a grey/blue box over anything that is tapped. It reads as
+     "did that register?", which is exactly the doubt a tap on a card creates. */
+  a,
+  button,
+  [role='button'],
+  [role='link'] {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 

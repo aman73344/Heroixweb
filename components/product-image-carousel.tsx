@@ -140,10 +140,14 @@ export function ProductImageCarousel({
               loading={idx === 0 ? "eager" : "lazy"}
               fetchPriority={idx === 0 ? "high" : "auto"}
               decoding="async"
+              // A draggable image starts dragging before the click fires, so on
+              // a phone a tap on the card could end up doing nothing. This is
+              // the picture the customer taps most, so it must stay tappable.
+              draggable={false}
               onLoad={() =>
                 setLoaded((prev) => (prev[idx] ? prev : { ...prev, [idx]: true }))
               }
-              className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-200 ${
+              className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-200 select-none [-webkit-user-drag:none] ${
                 idx === currentImageIndex ? "opacity-100" : "opacity-0 pointer-events-none"
               }`}
               style={{ zIndex: idx === currentImageIndex ? 1 : 0 }}
