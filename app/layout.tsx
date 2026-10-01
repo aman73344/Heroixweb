@@ -8,7 +8,14 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'HEROIX - Premium Anime Keychains',
+  // Default for any page that does not set its own. The home page overrides
+  // this with a keyword-led title, and each product page sets its own through
+  // app/products/[id]/layout.tsx - so this string is only what a page like
+  // /checkout falls back to.
+  title: {
+    default: 'HEROIX - Anime, Marvel, DC & Gaming Keychains in Pakistan',
+    template: '%s | HEROIX',
+  },
   description: 'Discover premium anime keychains with AI-powered recommendations. Shop our exclusive collection of high-quality anime merchandise.',
   generator: 'v0.app',
   icons: {
