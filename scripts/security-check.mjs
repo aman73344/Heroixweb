@@ -234,6 +234,70 @@ for (const rel of WRITE_FILES) {
     read('lib/orders-store.ts').includes('23505'),
   );
 
+  // ---- Customer-facing order numbers (sequential, from 1001) ----------------
+  //
+  // The critical invariant: the sequential number is DISPLAY ONLY. `orders.id`
+  // stays a random UUID and is the only thing any lookup may key on. If a lookup
+  // were ever rewired to order_number, anyone could enumerate 1001, 1002, ... and
+  // read other customers' names, phones and addresses. These checks fail if that
+  // separation is ever lost.
+  const store = read('lib/orders-store.ts');
+  const adminPage = read('app/admin/orders/page.tsx');
+  const checkoutPage = read('app/checkout/page.tsx');
+
+  check('sequential numbering is allocated server-side', store.includes('nextOrderNumber'));
+  check('the counter starts at 1001', store.includes('FIRST_ORDER_NUMBER = 1001'));
+  check(
+    'allocation reads the current maximum rather than trusting the client',
+    store.includes("order('order_number', { ascending: false })"),
+  );
+  check(
+    'a lost race for the display number is retried, not failed',
+    store.includes('continue; // lost the race for the display number'),
+  );
+
+  // No query may filter orders BY the sequential number. This is the check that
+  // would catch a well-meaning refactor turning the guessable number into a
+  // lookup key, which would leak one customer's details to another.
+  const eqByOrderNumber = /\.eq\(\s*['"]order_number['"]/;
+  check(
+    'no code queries orders BY order_number (sequential = guessable)',
+    !eqByOrderNumber.test(store) &&
+      !eqByOrderNumber.test(orders) &&
+      !eqByOrderNumber.test(chat) &&
+      !eqByOrderNumber.test(db),
+  );
+  check(
+    'no code filters orders by the display number instead of the UUID',
+    !/\.eq\(\s*['"]id['"]\s*,\s*(orderNumber|customerReference|order_number)/.test(
+      store + orders + chat + db,
+    ),
+  );
+
+  // The admin dashboard must keep keying actions on the UUID.
+  check(
+    'admin status changes still use the UUID, not the display number',
+    /handleStatusUpdate\(order\.id/.test(adminPage) &&
+      /handleDeleteOrder\(order\.id/.test(adminPage),
+  );
+  check(
+    'admin PATCH/DELETE still send ?id= built from the UUID',
+    /\/api\/orders\?id=\$\{orderId\}/.test(adminPage),
+  );
+
+  // The number must actually reach the customer.
+  check(
+    'checkout displays the customer-facing number',
+    /data\.data\?\.orderNumber/.test(checkoutPage),
+  );
+  check('chat quotes the customer-facing number', chat.includes('result.orderNumber'));
+
+  // The client must never be able to pick the number itself.
+  check(
+    'checkout never sends a client-chosen order number',
+    !/orderNumber\s*:/.test(checkoutPage) && !/order_number\s*:/.test(checkoutPage),
+  );
+
   // Atomic reservation before the order row is written.
   check('orders reserve stock before inserting', db.includes('reserveStock'));
   check(
@@ -461,6 +525,39 @@ for (const rel of WRITE_FILES) {
       return /import\s*\{[^}]*getProducts[^}]*\}\s*from\s*['"]@\/lib\/db['"]/.test(src);
     }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Every replay path must report a customer-visible number.
+//
+// Regression guard. There are TWO distinct replay paths in POST /api/orders:
+// the fast path (the order already exists, found before pricing) and
+// addOrderIdempotent's 23505 handler. The fast path used to return the raw
+// database row, which carries no `orderNumber`, so a customer who refreshed
+// and resubmitted saw their order flip from "1004" to a raw UUID - the number
+// silently changed under them, which is exactly what the whole feature exists
+// to prevent. Both paths have to be covered, not just the one that is easiest
+// to reach in a test.
+// ---------------------------------------------------------------------------
+{
+  const ordersSrc = read('app/api/orders/route.ts');
+
+  const fastStart = ordersSrc.indexOf('const existing = await findOrderById(orderId)');
+  const fastEnd = ordersSrc.indexOf('TRUSTED PRICING');
+  const fastPath = fastStart !== -1 && fastEnd > fastStart
+    ? ordersSrc.slice(fastStart, fastEnd)
+    : '';
+
+  check('the replay fast path is present', fastPath !== '');
+  check('the replay fast path reports an order number',
+    /orderNumber:\s*existingNumber/.test(fastPath));
+  check('the replay fast path reports a customer reference',
+    /customerReference:/.test(fastPath));
+  check('the 23505 replay path reports an order number',
+    /orderNumber:\s*replayNumber/.test(ordersSrc));
+  check('every success response carries a customer-visible number',
+    (ordersSrc.match(/orderNumber:/g) || []).length >= 3,
+    `${(ordersSrc.match(/orderNumber:/g) || []).length} occurrences`);
 }
 
 console.log(failures === 0 ? '\nALL SECURITY CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

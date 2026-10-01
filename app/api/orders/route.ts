@@ -129,8 +129,20 @@ export async function POST(request: NextRequest) {
     // it untouched and do NOT reserve stock a second time.
     const existing = await findOrderById(orderId);
     if (existing) {
+      // This is the branch a retry actually takes, so it has to report the SAME
+      // number the customer was given the first time. Returning the bare row
+      // made a retried checkout fall back to the raw UUID, so the customer would
+      // see their order change from "1004" to a UUID on a page refresh.
+      const existingNumber = existing.order_number ?? null;
       return NextResponse.json(
-        { success: true, message: 'Order already received', data: existing, duplicate: true },
+        {
+          success: true,
+          message: 'Order already received',
+          data: { ...existing, orderNumber: existingNumber },
+          orderNumber: existingNumber,
+          customerReference: existingNumber != null ? String(existingNumber) : orderId,
+          duplicate: true,
+        },
         { status: 200 }
       );
     }
@@ -198,6 +210,11 @@ export async function POST(request: NextRequest) {
 
     const result = await addOrderIdempotent(newOrder);
 
+    // What the customer is quoted. The short number is display only; `id` stays
+    // the UUID and remains the only safe lookup key.
+    const customerReference =
+      result.orderNumber != null ? String(result.orderNumber) : newOrder.id;
+
     if (!result.saved) {
       // The order was not stored, so give the reserved stock back. This releases
       // `reservation.reserved` - exactly the lines this call actually decremented
@@ -215,8 +232,16 @@ export async function POST(request: NextRequest) {
       // its own submission reserved the stock, so return the stock we just took.
       await releaseStock(reservation.reserved);
       const stored = await findOrderById(orderId);
+      // A replay must report the SAME number the customer was given first time.
+      const replayNumber = stored?.order_number ?? result.orderNumber;
       return NextResponse.json(
-        { success: true, message: 'Order already received', data: stored ?? newOrder, duplicate: true },
+        {
+          success: true,
+          message: 'Order already received',
+          data: { ...(stored ?? newOrder), orderNumber: replayNumber ?? null },
+          orderNumber: replayNumber ?? null,
+          duplicate: true,
+        },
         { status: 200 }
       );
     }
@@ -225,7 +250,9 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         message: 'Order created successfully',
-        data: newOrder,
+        data: { ...newOrder, orderNumber: result.orderNumber ?? null },
+        orderNumber: result.orderNumber ?? null,
+        customerReference,
         duplicate: false,
       },
       { status: 201 }

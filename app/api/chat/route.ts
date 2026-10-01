@@ -496,7 +496,10 @@ async function handleOrderFlow(
     sessionState.orderState = { items: [] };
     sessionState.orderStep = undefined;
 
-    return `🎉 Order received!\n\n📦 Order: ${itemsList}\n💰 Total: Rs ${total}\n📍 Delivery to: ${orderState.city}\n\n🆔 Order ID: ${newOrder.id}\n\n💳 Payment: NayaPay only\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order is NOT confirmed yet — without payment the order will not move forward. Send your payment screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}); once we receive your NayaPay payment we will confirm your order on WhatsApp and it will move forward.\n\nThanks for shopping with HEROIX!`;
+    const customerReference =
+      result.orderNumber != null ? String(result.orderNumber) : newOrder.id;
+
+    return `🎉 Order received!\n\n📦 Order: ${itemsList}\n💰 Total: Rs ${total}\n📍 Delivery to: ${orderState.city}\n\n🆔 Order ID: ${customerReference}\n\n💳 Payment: NayaPay only\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order is NOT confirmed yet — without payment the order will not move forward. Send your payment screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}); once we receive your NayaPay payment we will confirm your order on WhatsApp and it will move forward.\n\nThanks for shopping with HEROIX!`;
   }
 
   const onlyThesePatterns = /only these|just these|only these 3|only this|only these ones|bas yeh|bas yehi|sirf yeh|only want these|only these ones|these three|these ones/i;

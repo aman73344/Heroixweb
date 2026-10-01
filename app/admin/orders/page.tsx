@@ -18,6 +18,15 @@ interface OrderItem {
 
 interface Order {
   id: string;
+  /**
+   * Short customer-facing number (1001, 1002, ...). Display only.
+   *
+   * `id` (the UUID) is still what every lookup, status change and delete is
+   * keyed on - it is random, so it cannot be guessed by enumerating orders.
+   * `order_number` is sequential and must never be used to fetch a row.
+   * Optional until migration 003 has been applied.
+   */
+  order_number?: number | null;
   date: string;
   customer: string;
   email: string;
@@ -103,7 +112,10 @@ export default function OrdersPage() {
   };
 
   const filteredOrders = orders.filter(order => {
-    const matchesSearch = 
+    // Staff search on the number they read out over WhatsApp, so match
+    // order_number as well as the raw UUID.
+    const matchesSearch =
+      String(order.order_number ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
       order.phone.includes(searchTerm) ||
@@ -237,7 +249,11 @@ export default function OrdersPage() {
                 {filteredOrders.map((order) => (
                   <tr key={order.id} className="border-b border-border hover:bg-muted/30">
                     <td className="px-4 py-3">
-                      <span className="font-mono text-sm">{order.id}</span>
+                      {/* Show the customer-facing number; keep the UUID on hover
+                          so staff can still copy it when debugging. */}
+                      <span className="font-mono text-sm font-semibold" title={order.id}>
+                        {order.order_number ?? order.id}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-sm">{order.date}</td>
                     <td className="px-4 py-3">
@@ -400,7 +416,9 @@ export default function OrdersPage() {
             <Card className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold text-foreground">Order {viewOrder.id}</h2>
+                  <h2 className="text-xl font-bold text-foreground">
+                    Order {viewOrder.order_number ?? viewOrder.id}
+                  </h2>
                   <p className="text-sm text-muted-foreground">
                     {viewOrder.date} • <span className="capitalize">{viewOrder.status}</span>
                   </p>

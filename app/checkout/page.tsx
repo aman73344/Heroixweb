@@ -74,7 +74,12 @@ export default function CheckoutPage() {
 
       if (data.success) {
         // The server's total is authoritative - show what it actually charged.
-        setOrderId(data.data?.id ?? '');
+        // Prefer the short customer-facing number (1001) over the internal UUID.
+        setOrderId(
+          data.data?.orderNumber != null
+            ? String(data.data.orderNumber)
+            : (data.data?.id ?? '')
+        );
         setOrderTotal(Number(data.data?.total) || 0);
         setOrderPlaced(true);
         clearCart();
