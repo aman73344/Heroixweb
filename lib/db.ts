@@ -206,12 +206,30 @@ export interface Order {
 
 export async function getOrders(): Promise<Order[]> {
   try {
-    const { data, error, status } = await supabase
+    // SERVICE KEY, not the anon client.
+    //
+    // This read used `supabase` (anon) while every WRITE to `orders` used
+    // `adminSupabase`. That asymmetry worked only while anon still had SELECT on
+    // orders. Migration 001 runs `REVOKE ALL ON orders FROM anon`, and the moment
+    // it did, this call started failing with "permission denied for table
+    // orders" - the error is caught below and returns [], so the admin dashboard
+    // rendered an empty list while orders were being saved correctly.
+    //
+    // Symptom: customers order through checkout AND the chatbot, the chatbot
+    // confirms success, and nothing appears in /admin/orders.
+    //
+    // The service key bypasses RLS, which is exactly what an admin-only,
+    // session-guarded route needs. There is no path by which a browser reaches
+    // this function directly: the only caller is /api/orders GET, which is behind
+    // requireAdminApi().
+    const { data, error, status } = await adminSupabase
       .from('orders')
       .select('*')
       .order('created_at', { ascending: false });
-    
+
     if (error) {
+      // Log loudly. Returning [] on a permission error makes a broken admin
+      // dashboard look exactly like "no orders yet", which is how this bug hid.
       console.error('Supabase orders error:', {
         message: error.message,
         details: error.details,
@@ -220,7 +238,7 @@ export async function getOrders(): Promise<Order[]> {
       });
       return [];
     }
-    
+
     return data || [];
   } catch (error) {
     console.error('Error fetching orders:', error);

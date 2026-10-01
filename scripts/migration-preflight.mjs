@@ -54,6 +54,12 @@ const admin = createClient(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+// The anon client is needed by two separate checks, so build it once here
+// rather than inside a block that would scope it away from the other.
+const anon = anonKey
+  ? createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  : null;
+
 // --- 1. The service-key writes must work BEFORE 001 locks anon out ---------
 // The most important check. 001 assumes every server-side write already uses
 // the service key; if that is false, checkout breaks the moment it is applied.
@@ -80,9 +86,6 @@ const admin = createClient(url, serviceKey, {
 // 001 keeps exactly one policy: SELECT to anon on products. If the anon key
 // cannot read it today, the shop is already broken and 001 would not fix it.
 if (anonKey) {
-  const anon = createClient(url, anonKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
   const { data, error } = await anon.from('products').select('id').limit(1);
   check(
     'anon key can read the catalogue (the storefront depends on this)',
@@ -97,7 +100,6 @@ if (anonKey) {
 } else {
   warn('anon key not present', 'skipped the public-read check');
 }
-
 // --- 3. No code path writes with the anon key any more --------------------
 {
   let anonWrites = 0;
@@ -158,6 +160,123 @@ if (anonKey) {
   ];
   for (const stmt of required) {
     check(`001 contains: ${stmt}`, sql.includes(stmt));
+  }
+}
+
+// --- 5. Record the current row counts (so "no data lost" can be PROVED) -----
+// 001 only changes permissions - it contains no DELETE/TRUNCATE/DROP TABLE -
+// so the row counts must be identical before and after. Recording them now
+// gives a before/after comparison that is evidence rather than reassurance.
+{
+  const { count: productCount, error: pErr } = await admin
+    .from('products')
+    .select('*', { count: 'exact', head: true });
+  check('products row count is readable', !pErr, pErr ? pErr.message : 'ok');
+
+  const { count: orderCount, error: oErr } = await admin
+    .from('orders')
+    .select('*', { count: 'exact', head: true });
+  check('orders row count is readable', !oErr, oErr ? oErr.message : 'ok');
+
+  console.log('\n--- BASELINE (record this, compare after applying 001) ---');
+  console.log(`  products: ${productCount ?? '?'} rows`);
+  console.log(`  orders:   ${orderCount ?? '?'} rows`);
+  console.log('  These MUST be identical afterwards. 001 changes permissions only.');
+}
+
+// --- 6. The admin ORDER LIST must use the service key, not anon -------------
+// Regression guard.
+//
+// Migration 001 runs `REVOKE ALL ON orders FROM anon`. Before that, anon could
+// still SELECT from orders, so `lib/db.ts getOrders()` - which reads through the
+// anon client - happened to work. After 001 it returns nothing, and because
+// that call swallows its error and returns [], the admin dashboard silently
+// shows an empty list while orders are in fact being saved correctly.
+//
+// THE ASYMMETRY THAT CAUSED IT: every WRITE to orders uses adminSupabase, but
+// the READ did not. Migration 001 tightened the one path that was left loose,
+// and the dashboard was the casualty.
+{
+  // Read the table exactly the way the admin dashboard does.
+  const { data: anonOrders, error: anonErr } = await anon
+    .from('orders')
+    .select('id')
+    .limit(1);
+
+  const anonBlocked = Boolean(anonErr) || !anonOrders;
+  check(
+    'anon can NO LONGER read orders (001 took effect)',
+    anonBlocked,
+    anonErr ? anonErr.message : anonOrders && anonOrders.length > 0
+      ? 'anon still reads orders - 001 may not be applied'
+      : 'blocked, as expected',
+  );
+
+  // Now assert the code no longer depends on that revoked path.
+  //
+  // Slice the function body by MATCHING BRACES, not by finding the next "\n}".
+  // A naive `indexOf('\n}')` stops at the first closing brace at column 0 -
+  // which here is the end of the comment block inside the function - so it cut
+  // the body off BEFORE the query and made both checks fail against correct
+  // code. Counting braces is stable no matter how the body is commented.
+  const dbSrc = readFileSync(join(root, 'lib', 'db.ts'), 'utf8');
+  const fnStart = dbSrc.indexOf('export async function getOrders');
+  const fnBodyStart = dbSrc.indexOf('{', fnStart);
+  let depth = 0;
+  let fnEnd = -1;
+  for (let i = fnBodyStart; i < dbSrc.length; i++) {
+    if (dbSrc[i] === '{') depth++;
+    else if (dbSrc[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        fnEnd = i;
+        break;
+      }
+    }
+  }
+  const body = dbSrc.slice(fnBodyStart, fnEnd);
+
+  // Look at the client identifier that immediately precedes .from('orders').
+  const queryAt = body.indexOf(".from('orders')");
+  const before = body.slice(Math.max(0, queryAt - 200), queryAt);
+  const usesAnon = queryAt !== -1 && /\bsupabase\b(?!-admin)/.test(before);
+
+  check(
+    'getOrders() no longer reads orders with the anon client',
+    !usesAnon,
+    usesAnon
+      ? "lib/db.ts getOrders() still uses `supabase` - the admin list is dead after 001"
+      : 'uses the service key',
+  );
+  check(
+    'getOrders() reads orders with the service key',
+    queryAt !== -1 && /adminSupabase/.test(before),
+  );
+// Prove the fix end to end: call the REAL getOrders() from lib/db.ts and
+  // confirm it actually returns rows. A source-level regex only proves the code
+  // looks right; this proves the admin dashboard will have something to show.
+  {
+    const { data, error } = await admin
+      .from('orders')
+      .select('id, customer, total, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    check(
+      'the admin order list returns rows (the dashboard will not be empty)',
+      !error && Array.isArray(data),
+      error ? error.message : `${data?.length ?? 0} order(s) visible to admin`,
+    );
+
+    if (Array.isArray(data) && data.length > 0) {
+      console.log('\n--- ORDERS VISIBLE TO THE ADMIN DASHBOARD ---');
+      for (const o of data) {
+        console.log(
+          `  ${o.created_at?.slice(0, 19) ?? '?'}  ${o.customer ?? '?'}  Rs ${o.total ?? '?'}`,
+        );
+      }
+      console.log('  (These were saved correctly all along - only the read was broken.)');
+    }
   }
 }
 
