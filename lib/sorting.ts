@@ -1,4 +1,11 @@
-import { getVariantPrice, parseVariants, ProductVariant } from "./variants";
+// ProductVariant is an interface, so it comes in as a type: it only exists in
+// TypeScript and is erased before this module runs. Importing it as a value
+// compiles fine in Next but breaks any plain-Node ESM run of this file with
+// "does not provide an export named 'ProductVariant'" - which is exactly what
+// stopped scripts/verify-fixes.mjs (it imports this module directly) from
+// finishing its sorting checks.
+import { getVariantPrice, parseVariants } from "./variants";
+import type { ProductVariant } from "./variants";
 
 /**
  * How the keychains are ordered in the store grids.

@@ -2,10 +2,17 @@
 //   - every product loads (the old .limit(50) hid 3 of 53)
 //   - a design keeps all its pictures (the old 3-picture cap dropped extras)
 //   - 6+ designs per product parse and round-trip through storage unchanged
-// Run: node scripts/verify-fixes.mjs
+// Run: node --experimental-strip-types scripts/verify-fixes.mjs
+// (Node 22.18+ / 23+ strip TypeScript by default, so the flag can be dropped.)
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { register } from 'node:module';
 import { parseVariants, formatVariantsForStorage, formatVariantsForTextarea, getVariantImages, MAX_VARIANT_IMAGES } from '../lib/variants.ts';
+
+// Lets the app's own modules be imported here even though they use bundler-style
+// specifiers such as "./variants" (see the hook for the details). Registered
+// before the dynamic imports below, so it never touches app code at build time.
+register('./ts-resolve-hooks.mjs', import.meta.url);
 
 const env = Object.fromEntries(
   readFileSync(new URL('../.env.local', import.meta.url), 'utf8')
