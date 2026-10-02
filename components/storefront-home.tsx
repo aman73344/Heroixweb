@@ -337,7 +337,7 @@ export function StorefrontHome({
               Featured Collection
             </h2>
             <p className="text-muted-foreground">
-              {loading
+              {sortedProducts.length === 0 && loading
                 ? "Loading..."
                 : `${sortedProducts.length} designs in ${selectedCategory === "All" ? "all categories" : selectedCategory}`}
             </p>
@@ -368,15 +368,13 @@ export function StorefrontHome({
           </div>
         </ScrollReveal>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <RefreshCw className="w-8 h-8 animate-spin text-accent" />
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="text-muted-foreground">No products found. Please try again later.</p>
-          </div>
-        ) : (
+        {/* Products decide what is shown, NOT the loading flag.
+            This used to ask `loading` first, so any moment the flag was true the
+            whole grid was replaced by a spinner - even with 70 keychains already
+            rendered from the server. On a slow phone connection that reads as
+            "the products disappeared". The flag may now only take over when there
+            is genuinely nothing to show yet. */}
+        {sortedProducts.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {sortedProducts.map((product: any) => {
             const parsedVariants = parseVariants(product.variants, Number(product.stock) || 0);
@@ -532,6 +530,18 @@ export function StorefrontHome({
             );
           })}
         </div>
+        ) : loading ? (
+          <div className="flex items-center justify-center py-20">
+            <RefreshCw className="w-8 h-8 animate-spin text-accent" />
+          </div>
+        ) : (
+          <div className="text-center py-20">
+            <p className="text-muted-foreground">
+              {selectedCategory === "All"
+                ? "No products found. Please try again later."
+                : `No ${selectedCategory} keychains right now.`}
+            </p>
+          </div>
         )}
       </section>
       <StoreFooter />
