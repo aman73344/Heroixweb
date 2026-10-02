@@ -147,7 +147,9 @@ export function ProductImageCarousel({
               onLoad={() =>
                 setLoaded((prev) => (prev[idx] ? prev : { ...prev, [idx]: true }))
               }
-              className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-200 select-none [-webkit-user-drag:none] ${
+              // The picture zooms in gently on hover on a laptop, and gets a soft
+              // brightness lift on a touch device where there is no hover.
+              className={`absolute inset-0 w-full h-full object-contain transition-[opacity,transform,filter] duration-500 ease-out group-hover:scale-105 touch:brightness-105 select-none [-webkit-user-drag:none] ${
                 idx === currentImageIndex ? "opacity-100" : "opacity-0 pointer-events-none"
               }`}
               style={{ zIndex: idx === currentImageIndex ? 1 : 0 }}

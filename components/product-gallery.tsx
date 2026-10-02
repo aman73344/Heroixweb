@@ -103,7 +103,9 @@ export function ProductGallery({
           fetchPriority={idx === 0 ? "high" : "auto"}
           decoding="async"
           onLoad={() => setLoaded((prev) => (prev[idx] ? prev : { ...prev, [idx]: true }))}
-          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-200 ${
+          // Same gentle zoom as the grid cards: it is the one large image on the page, so
+          // a little movement here does more than anywhere else.
+          className={`absolute inset-0 w-full h-full object-contain transition-[opacity,transform,filter] duration-500 ease-out group-hover:scale-105 touch:brightness-105 select-none [-webkit-user-drag:none] ${
             idx === safeIndex ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
           style={{ zIndex: idx === safeIndex ? 1 : 0 }}

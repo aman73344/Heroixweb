@@ -33,6 +33,9 @@ import { getProducts } from "@/lib/catalogue";
 import { parseVariants, getVariantImages, getVariantPrice } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { StarRating } from "@/components/star-rating";
+import { RotatingTagline } from "@/components/rotating-tagline";
+import { ScrollReveal } from "@/components/scroll-reveal";
+import { StoreFooter } from "@/components/store-footer";
 import { getCategoryFilterOptions } from "@/lib/categories";
 import { sortProducts, SORT_OPTIONS, DEFAULT_SORT, type SortKey } from "@/lib/sorting";
 import { normalizeRating, normalizeReviewCount, DEFAULT_RATING } from "@/lib/reviews";
@@ -176,14 +179,25 @@ export function StorefrontHome({
               alt="HEROIX"
               width={80}
               height={40}
-              className="h-8 w-auto"
+              className="h-8 w-auto transition-transform duration-300 hover:scale-105 touch:opacity-80"
             />
-            <span className="text-foreground text-sm font-semibold hidden sm:inline">
-              Premium Anime Keychains
+            {/* Was the flat "Premium Anime Keychains". Now it cycles the
+                categories so the navbar says something worth reading. */}
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-sm">
+              <span className="text-muted-foreground">So much to order:</span>
+              <RotatingTagline
+                words={["Anime", "Marvel", "DC", "Gaming", "Sports"]}
+                className="font-semibold text-accent"
+              />
+              <span className="text-muted-foreground">keychains</span>
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <Link href="/checkout" className="relative">
+            <Link
+              href="/checkout"
+              className="relative inline-flex rounded-full p-1 -m-1 transition-transform duration-200 hover:scale-110 active:scale-95 touch:bg-accent/10"
+              aria-label="Your cart"
+            >
               <ShoppingCart className="w-5 h-5 text-foreground" />
               {totalItems > 0 && (
                 <span className="absolute -top-2 -right-2 bg-accent text-accent-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
@@ -290,28 +304,31 @@ export function StorefrontHome({
       </section>
 
       {/* Category Filter */}
-      <section className="border-b border-border bg-card/30 py-6">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-center gap-2 overflow-x-auto pb-2">
-            {categoryOptions.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${
-                  selectedCategory === category
-                    ? "bg-accent text-accent-foreground"
-                    : "bg-card text-foreground hover:bg-card/80"
-                }`}
-              >
-                {category}
-              </button>
-            ))}
+      <ScrollReveal>
+        <section className="border-b border-border bg-card/30 py-6">
+          <div className="max-w-7xl mx-auto px-4">
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              {categoryOptions.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-95 ${
+                    selectedCategory === category
+                      ? "bg-accent text-accent-foreground"
+                      : "bg-card text-foreground hover:bg-card/80 touch:bg-accent/10"
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </ScrollReveal>
 
       {/* Products Grid */}
-      <section id="products" className="max-w-7xl mx-auto px-4 py-16">
+      <ScrollReveal>
+        <section id="products" className="max-w-7xl mx-auto px-4 py-16">
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h2 className="text-3xl font-bold text-foreground mb-2">
@@ -386,7 +403,7 @@ export function StorefrontHome({
               // confirms the press instantly, and `touch-manipulation` stops
               // the browser holding a tap back to see whether it is a
               // double-tap-zoom (that wait is what made taps feel dead).
-              className="group border-border hover:border-accent touch:border-accent transition-all duration-300 overflow-hidden cursor-pointer touch-manipulation select-none active:border-accent active:scale-[0.98] active:duration-75"
+              className="group border-border hover:border-accent hover:-translate-y-1 hover:shadow-2xl hover:shadow-accent/10 touch:border-accent touch:shadow-lg touch:shadow-accent/5 transition-all duration-300 overflow-hidden cursor-pointer touch-manipulation select-none active:border-accent active:scale-[0.98] active:duration-75"
               onClick={() => openProduct(product)}
               onPointerEnter={() => prefetchProduct(product.id)}
               onPointerDown={() => prefetchProduct(product.id)}
@@ -447,9 +464,6 @@ export function StorefrontHome({
                       {product.name}
                     </Link>
                   </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {product.description}
-                  </p>
                 </div>
 
                 {/* Rating - shows empty stars and "No reviews yet" for a product that
@@ -494,7 +508,7 @@ export function StorefrontHome({
                       e.stopPropagation();
                       handleAddToCart(product);
                     }}
-                    className="bg-accent hover:bg-accent/90 text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-accent hover:bg-accent/90 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:scale-95 transition-all text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                     title={
                       isOutOfStock
                         ? "Out of stock"
@@ -516,91 +530,9 @@ export function StorefrontHome({
           })}
         </div>
         )}
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border bg-card/30 py-12 mt-20">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-            <div>
-              <Image
-                src="/heroix-logo.png"
-                alt="HEROIX"
-                width={100}
-                height={50}
-                className="h-6 w-auto mb-4"
-              />
-              <p className="text-sm text-muted-foreground">
-                Premium anime keychains for true collectors.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-bold text-foreground mb-4">Shop</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    All Products
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    New Arrivals
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    Best Sellers
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-bold text-foreground mb-4">Support</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    Help Center
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    Shipping Info
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    Returns
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-bold text-foreground mb-4">Connect</h4>
-              <div className="space-y-2 text-sm">
-                <a
-                  href="https://wa.me/923143131716"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-accent transition-colors block"
-                >
-                  WhatsApp
-                </a>
-                <a
-                  href="https://instagram.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-accent transition-colors block"
-                >
-                  Instagram
-                </a>
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-border pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; 2026 HEROIX. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
+        </section>
+      </ScrollReveal>
+      <StoreFooter />
 
       {/* Floating Chat Button */}
       <button

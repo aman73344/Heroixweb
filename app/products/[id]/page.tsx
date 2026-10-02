@@ -18,6 +18,8 @@ import { getProducts, getCatalogueCache } from "@/lib/catalogue";
 import { parseVariants, getVariantImages, getVariantPrice, hasOwnVariantPrice, ProductVariant } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { ProductGallery } from "@/components/product-gallery";
+import { StoreFooter } from "@/components/store-footer";
+import { ScrollReveal } from "@/components/scroll-reveal";
 import { StarRating } from "@/components/star-rating";
 import { sortProducts } from "@/lib/sorting";
 import Link from "next/link";
@@ -503,7 +505,8 @@ export default function ProductPage() {
               so a design's picture never sits inside the main product image area.
               Clicking a card shows its picture, title and description in the main area. */}
           {hasVariants && (
-            <div className="mt-12 pt-8 border-t border-border space-y-4">
+            <ScrollReveal>
+              <div className="mt-12 pt-8 border-t border-border space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-accent" />
@@ -539,10 +542,10 @@ export default function ProductPage() {
                   return (
                     <div
                       key={`${variant.name}-${variantIdx}`}
-                      className={`rounded-2xl border-2 bg-card/50 overflow-hidden flex flex-col transition-all ${
+                      className={`rounded-2xl border-2 bg-card/50 overflow-hidden flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-accent/5 touch:shadow-md ${
                         isSelected
                           ? "border-accent ring-2 ring-accent/30 shadow-lg shadow-accent/10"
-                          : "border-border hover:border-accent/60"
+                          : "border-border hover:border-accent/60 touch:border-accent/40"
                       }`}
                     >
                       <button
@@ -657,7 +660,8 @@ export default function ProductPage() {
                   );
                 })}
               </div>
-            </div>
+              </div>
+            </ScrollReveal>
           )}
         </div>
       </section>
@@ -721,7 +725,8 @@ export default function ProductPage() {
       </section>
 
       {/* Related Products */}
-      <section className="max-w-7xl mx-auto px-4 py-16">
+      <ScrollReveal>
+        <section className="max-w-7xl mx-auto px-4 py-16">
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-foreground mb-2">
             Related Products
@@ -755,7 +760,7 @@ export default function ProductPage() {
               return (
               <Card
                 key={relatedProduct.id}
-                className="group border-border hover:border-accent touch:border-accent transition-all duration-300 overflow-hidden cursor-pointer touch-manipulation select-none active:border-accent active:scale-[0.98] active:duration-75"
+                className="group border-border hover:border-accent hover:-translate-y-1 hover:shadow-2xl hover:shadow-accent/10 touch:border-accent touch:shadow-lg touch:shadow-accent/5 transition-all duration-300 overflow-hidden cursor-pointer touch-manipulation select-none active:border-accent active:scale-[0.98] active:duration-75"
                 onClick={() => router.push(`/products/${relatedProduct.id}`)}
                 onPointerEnter={() => router.prefetch(`/products/${relatedProduct.id}`)}
                 onPointerDown={() => router.prefetch(`/products/${relatedProduct.id}`)}
@@ -844,7 +849,7 @@ export default function ProductPage() {
                         e.stopPropagation();
                         router.push(`/products/${relatedProduct.id}`);
                       }}
-                      className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                      className="bg-accent hover:bg-accent/90 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:scale-95 transition-all text-accent-foreground"
                     >
                       <ShoppingCart className="w-4 h-4" />
                     </Button>
@@ -854,91 +859,9 @@ export default function ProductPage() {
             );
             })}
         </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border bg-card/30 py-12 mt-20">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-            <div>
-              <Image
-                src="/heroix-logo.png"
-                alt="HEROIX"
-                width={100}
-                height={50}
-                className="h-6 w-auto mb-4"
-              />
-              <p className="text-sm text-muted-foreground">
-                Premium anime keychains for true collectors.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-bold text-foreground mb-4">Shop</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    All Products
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    New Arrivals
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    Best Sellers
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-bold text-foreground mb-4">Support</h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    Help Center
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    Shipping Info
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-accent transition-colors">
-                    Returns
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-bold text-foreground mb-4">Connect</h4>
-              <div className="space-y-2 text-sm">
-                <a
-                  href="https://wa.me/923143131716"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-accent transition-colors block"
-                >
-                  WhatsApp
-                </a>
-                <a
-                  href="https://instagram.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted-foreground hover:text-accent transition-colors block"
-                >
-                  Instagram
-                </a>
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-border pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; 2026 HEROIX. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
+        </section>
+      </ScrollReveal>
+      <StoreFooter />
     </div>
   );
 }
