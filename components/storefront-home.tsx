@@ -326,10 +326,12 @@ export function StorefrontHome({
         </section>
       </ScrollReveal>
 
-      {/* Products Grid */}
-      <ScrollReveal>
-        <section id="products" className="max-w-7xl mx-auto px-4 py-16">
-        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+      {/* Products Grid. Only the heading animates in: the grid itself is never
+          wrapped in ScrollReveal, because hiding the products behind an
+          animation is how a shop ends up looking empty. */}
+      <section id="products" className="max-w-7xl mx-auto px-4 py-16">
+        <ScrollReveal>
+          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h2 className="text-3xl font-bold text-foreground mb-2">
               Featured Collection
@@ -363,7 +365,8 @@ export function StorefrontHome({
               ))}
             </select>
           </div>
-        </div>
+          </div>
+        </ScrollReveal>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -530,8 +533,7 @@ export function StorefrontHome({
           })}
         </div>
         )}
-        </section>
-      </ScrollReveal>
+      </section>
       <StoreFooter />
 
       {/* Floating Chat Button */}

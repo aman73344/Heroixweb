@@ -505,9 +505,11 @@ export default function ProductPage() {
               so a design's picture never sits inside the main product image area.
               Clicking a card shows its picture, title and description in the main area. */}
           {hasVariants && (
-            <ScrollReveal>
-              <div className="mt-12 pt-8 border-t border-border space-y-4">
-              <div className="flex items-center justify-between flex-wrap gap-2">
+            // Only the heading animates in. The design cards themselves are
+            // never hidden: a tall grid behind an animation can stay invisible.
+            <div className="mt-12 pt-8 border-t border-border space-y-4">
+              <ScrollReveal>
+                <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-accent" />
                   Choose Your Design
@@ -520,6 +522,7 @@ export default function ProductPage() {
                     : `same price Rs ${basePrice}`}
                 </span>
               </div>
+              </ScrollReveal>
               <p className="text-xs text-muted-foreground">
                 Tap a design to see its big picture, title and description in the main
                 area, then press its Add to Cart — every design is added separately and
@@ -661,7 +664,6 @@ export default function ProductPage() {
                 })}
               </div>
               </div>
-            </ScrollReveal>
           )}
         </div>
       </section>
@@ -724,14 +726,15 @@ export default function ProductPage() {
             showing the same three variant lists on one page. */}
       </section>
 
-      {/* Related Products */}
-      <ScrollReveal>
-        <section className="max-w-7xl mx-auto px-4 py-16">
-        <div className="mb-8">
+      {/* Related Products. The cards are not hidden behind an animation. */}
+      <section className="max-w-7xl mx-auto px-4 py-16">
+        <ScrollReveal>
+          <div className="mb-8">
           <h2 className="text-3xl font-bold text-foreground mb-2">
             Related Products
           </h2>
         </div>
+        </ScrollReveal>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Same ordering as the home grid: the priciest band of keychains first, so a
@@ -859,8 +862,7 @@ export default function ProductPage() {
             );
             })}
         </div>
-        </section>
-      </ScrollReveal>
+      </section>
       <StoreFooter />
     </div>
   );

@@ -46,21 +46,46 @@ export function ScrollReveal({
 
     setState("hidden");
 
+    const reveal = () => {
+      setState("shown");
+      observer.disconnect();
+    };
+
+    // threshold MUST be 0 here.
+    //
+    // The threshold is a fraction OF THE TARGET ELEMENT, not of the screen. The
+    // product grid is tens of thousands of pixels tall, so the most of it that
+    // can ever be on screen is a tiny fraction - far below any threshold like
+    // 0.05. The browser therefore never reported a crossing and the section
+    // stayed at opacity-0 forever: "products are not available until I click a
+    // category" (clicking one shrinks the grid until the fraction is finally
+    // reached, which is why it then appeared).
+    //
+    // threshold: 0 fires as soon as ANY part enters, which is correct for both
+    // a 60px category bar and a 40,000px product grid.
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          setState("shown");
-          observer.disconnect();
+          if (entry.isIntersecting) reveal();
         }
       },
-      // Reveal slightly before the element is fully on screen, so it is already
-      // in place by the time the customer looks at it.
-      { rootMargin: "0px 0px -10% 0px", threshold: 0.05 }
+      // Reveal as the element starts to come into view rather than waiting
+      // until it is fully on screen.
+      { rootMargin: "0px 0px -10% 0px", threshold: 0 }
     );
 
     observer.observe(element);
-    return () => observer.disconnect();
+
+    // Backstop: content must never be able to stay invisible. If the observer
+    // somehow never reports (an edge case in a browser, a parent with
+    // display:none, a container that changes size later), force it visible
+    // rather than leaving a section of the shop blank.
+    const failsafe = setTimeout(reveal, 2000);
+
+    return () => {
+      clearTimeout(failsafe);
+      observer.disconnect();
+    };
   }, []);
 
   const stateClass =
