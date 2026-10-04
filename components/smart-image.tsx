@@ -29,6 +29,8 @@ import {
   imageSrcSet,
   imageUrl,
   noteMissingDerivative,
+  derivativeWidthFromUrl,
+  availableWidths,
   hasDerivatives,
 } from "@/lib/image-url";
 
@@ -68,9 +70,15 @@ export function SmartImage({
   "aria-hidden": ariaHidden,
   onLoad,
 }: SmartImageProps) {
-  // Set when a derivative turned out to be missing: from then on this component
-  // asks for the original and nothing else.
+  // Set when this picture's every remaining candidate turned out to be missing:
+  // from then on this component asks for the original and nothing else.
   const [useOriginal, setUseOriginal] = useState(false);
+
+  // Bumped whenever a tier is dropped as missing, because recording that in the
+  // shared table does not re-render this component by itself and the srcset below
+  // would keep advertising a file the browser has already proven is not there.
+  // The value is never read - the state change is the whole point.
+  const [, setRevision] = useState(0);
 
   // A picture that changes URL (switching design, cycling the carousel) must
   // start trusting derivatives again for the new URL.
@@ -81,13 +89,33 @@ export function SmartImage({
   const srcSet = useOriginal ? "" : imageSrcSet(src);
   const resolved = useOriginal ? src : imageUrl(src, cssWidth);
 
-  const handleError = useCallback(() => {
-    // Nothing to fall back to for a non-Storage picture (placeholder, external
-    // host): the browser's own broken-image state is the honest answer.
-    if (!hasDerivatives(src)) return;
-    noteMissingDerivative(src);
-    setUseOriginal(true);
-  }, [src]);
+  const handleError = useCallback(
+    (event: React.SyntheticEvent<HTMLImageElement>) => {
+      // Nothing to fall back to for a non-Storage picture (placeholder, external
+      // host): the browser's own broken-image state is the honest answer.
+      if (!hasDerivatives(src)) return;
+
+      // Work out WHICH tier failed rather than condemning the whole picture.
+      // `currentSrc` is the exact file the browser chose, so a missing 800px no
+      // longer drags a perfectly good 400px down with it.
+      const failedWidth = derivativeWidthFromUrl(src, event.currentTarget.currentSrc);
+
+      // `currentSrc` can be empty while the element is still resolving, and a
+      // candidate can be missing for a reason no tier can explain. Dropping every
+      // width is the old all-or-nothing behaviour and stays the right last resort.
+      noteMissingDerivative(src, failedWidth ?? undefined);
+
+      if (availableWidths(src).length === 0) {
+        setUseOriginal(true);
+        return;
+      }
+
+      // Still something smaller than the original: rebuild the srcset without the
+      // tier that just failed and let the browser pick again.
+      setRevision((r) => r + 1);
+    },
+    [src],
+  );
 
   return (
     <img

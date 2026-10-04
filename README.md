@@ -423,7 +423,42 @@ as *mounted or not mounted*, not as `loading="lazy"` - and why
 
 Run `npm run images:optimize` again. It skips anything already generated, so a
 re-run only picks up new pictures. Until you do, the missing thumbnail is
-noticed at runtime and the original is used instead - the page still works.
+noticed at runtime and the next-best size is used instead - only if every size is
+missing does the original get downloaded, so the page still works and still stays
+cheap.
+
+### What if one size is missing?
+
+Sizes are tracked per picture **and** per width. If the 800px file is missing but
+the 400px one exists, the page uses the 400px file - it does not jump straight to
+the full-size original. The original is only a last resort, when nothing smaller
+exists.
+
+`npm run images:test-fallback` checks that whole ladder directly
+(`scripts/verify-missing-derivative.mjs`, 31 assertions against the real
+`lib/image-url.ts`, no browser needed).
+
+### Which quality, and why
+
+Derivatives are encoded at WebP **q70**. That number is measured, not guessed:
+
+```
+npm run images:quality     # re-encodes a spread sample, reports bytes per setting
+node scripts/zoom-image-quality.mjs   # 3x zoom of the busiest region, side by side
+```
+
+Across a spread sample of the catalogue at 800px, q70 is 15% smaller than q78 while
+q65 is only a further 5% smaller - and at 3x magnification q65 visibly softens the
+fine engraving while q70 does not. The quality is a named constant at the top of
+`scripts/generate-image-derivatives.mjs`.
+
+### Checking it in a real browser
+
+`npm run test:gallery` (`scripts/verify-gallery-live.mjs`) drives headless Chrome
+through a multi-picture product page - clicks the arrows, dispatches a swipe,
+switches design - and reads the real network log. It fails if any
+original-resolution image is downloaded, if any product photo renders as a
+derivative reference rather than a derivative file, or if anything is broken.
 
 ### Verifying it
 

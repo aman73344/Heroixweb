@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { SmartImage } from "@/components/smart-image";
-import { IMAGE_SIZES, imageUrl, previewUrl } from "@/lib/image-url";
+import { IMAGE_SIZES, imageUrl, previewUrl, availableWidths } from "@/lib/image-url";
 import { preloadImage } from "@/lib/image-preloader";
 import { usePreloadBudget } from "@/hooks/use-preload-budget";
 
@@ -95,7 +95,12 @@ export function ProductGallery({
   // The instant cheap version of the visible picture, when one exists. Painted
   // underneath the real one so the frame is never empty while it downloads.
   const activePreview = previewUrl(activeSrc);
-  const activePending = activePreview === null && activeSrc ? settled[activeSrc] === undefined : false;
+  // A spinner is only honest when there is nothing left to show but the original.
+  // `previewUrl` also returns null merely because the 400px tier is missing, and in
+  // that case a perfectly good 800px is on its way - a spinner there would flash in
+  // front of a picture that is about to arrive.
+  const activePending =
+    activeSrc && availableWidths(activeSrc).length === 0 && settled[activeSrc] === undefined;
 
   const hasMultiple = images.length > 1;
 

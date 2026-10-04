@@ -151,42 +151,97 @@ export function hasDerivatives(src: string | null | undefined): boolean {
 // --- "the derivative is not there (yet)" bookkeeping ------------------------
 //
 // The generator is a one-off migration, so until it has run for every picture
-// some candidate may not exist yet. When the browser reports that failure we
-// remember the original URL and every later picture in the session is served the
-// original directly instead of paying for another failed request.
+// some candidate may not exist yet. That is recorded PER WIDTH, not per picture:
+// the 800px tier and the 400px tier are separate files, and losing one of them
+// says nothing about the other. Marking the whole picture as "no derivatives"
+// (which is what this used to do) meant a single missing 800px file sent the
+// browser to the 785 KB original even though a perfectly good 400px derivative
+// was sitting right next to it - turning one small gap into the most expensive
+// download the page can make.
 //
-// This is a safety net, not the normal path: once the generator has run, these
-// entries never appear.
+// Once the browser reports a failure the exact candidate is remembered, so every
+// later read drops it from the srcset and the failure is paid for once instead of
+// on every render.
 
-const missingDerivatives = new Set<string>();
+/** Original URL -> the widths whose file the browser has reported missing. */
+const missingWidths = new Map<string, Set<number>>();
 
-/** Records that `src` has no generated derivative; later reads use the original. */
-export function noteMissingDerivative(src: string | null | undefined): void {
-  if (src) missingDerivatives.add(src);
+/**
+ * Records that `width` of `src` has no generated derivative.
+ *
+ * Called with no `width` this keeps the old blunt meaning - every tier of this
+ * picture is treated as missing - for callers that genuinely know the whole
+ * picture is unavailable.
+ */
+export function noteMissingDerivative(src: string | null | undefined, width?: number): void {
+  if (!src) return;
+  const widths = width === undefined ? IMAGE_WIDTHS : [width];
+  let missing = missingWidths.get(src);
+  if (!missing) {
+    missing = new Set<number>();
+    missingWidths.set(src, missing);
+  }
+  for (const w of widths) missing.add(w);
 }
 
-/** True when a previous failure told us to stop asking for a derivative of `src`. */
+/**
+ * Which tier `candidateUrl` is, if it is a derivative of `src` at all.
+ *
+ * <img>.onError does not say which file failed, but `currentSrc` on the element
+ * is exactly the file the browser chose and just failed to load, and every
+ * derivative key ends in `@<width>.webp`. That is how a failure is attributed to
+ * one tier instead of condemning all of them.
+ */
+export function derivativeWidthFromUrl(
+  src: string | null | undefined,
+  candidateUrl: string | null | undefined,
+): number | null {
+  const object = parseStorageObject(src);
+  if (!object || !candidateUrl) return null;
+  const candidate = candidateUrl.split("?")[0]!;
+  for (const width of IMAGE_WIDTHS) {
+    if (candidate.endsWith(derivativePath(object.key, width))) return width;
+  }
+  return null;
+}
+
+/**
+ * The generated widths still worth offering for `src`: every tier, minus the ones
+ * the browser has already reported missing.
+ */
+export function availableWidths(src: string | null | undefined): number[] {
+  if (!hasDerivatives(src)) return [];
+  const missing = missingWidths.get(src!);
+  if (!missing) return [...IMAGE_WIDTHS];
+  return IMAGE_WIDTHS.filter((width) => !missing.has(width));
+}
+
+/**
+ * True only when nothing smaller than the original is left - the single situation
+ * in which falling back to the original is the right answer.
+ */
 export function isMissingDerivative(src: string | null | undefined): boolean {
-  return !!src && missingDerivatives.has(src);
+  return hasDerivatives(src) && availableWidths(src).length === 0;
 }
 
 /** Test seam - clears the "no derivative" memory. */
 export function resetMissingDerivatives(): void {
-  missingDerivatives.clear();
+  missingWidths.clear();
 }
 
 /**
- * The `srcset` for a picture: one entry per generated width, all pointing at
- * real, differently-sized files.
+ * The `srcset` for a picture: one entry per generated width that still exists.
  *
- * Returns an empty string when no derivative applies or one is known to be
- * missing, which makes <SmartImage> fall back to the untouched original - the
- * correct behaviour for a placeholder or an externally hosted image.
+ * A width the browser already reported missing is left out, so a picture whose
+ * 800px tier is absent is offered its 400px file and nothing asks for the
+ * original. Returns an empty string only when nothing smaller is left or the
+ * picture was never a Storage object, which makes <SmartImage> fall back to the
+ * untouched original - the correct behaviour for a placeholder or an external
+ * image.
  */
 export function imageSrcSet(src: string | null | undefined): string {
-  if (!src || isMissingDerivative(src) || !hasDerivatives(src)) return "";
   const entries: string[] = [];
-  for (const width of IMAGE_WIDTHS) {
+  for (const width of availableWidths(src)) {
     const url = derivativeUrl(src, width);
     if (url) entries.push(`${url} ${width}w`);
   }
@@ -194,38 +249,42 @@ export function imageSrcSet(src: string | null | undefined): string {
 }
 
 /**
- * The smallest generated width that is still dense enough for a `cssWidth`-wide
- * slot on a 2x screen. Falls back to the largest tier, and then to the original,
- * so this always returns something usable.
+ * The smallest surviving width that is still dense enough for a `cssWidth`-wide
+ * slot on a 2x screen, constrained to `widths`. Falls back to the largest of
+ * those, so this always returns something usable.
  */
-export function pickDerivativeWidth(cssWidth: number): number {
+export function pickDerivativeWidth(cssWidth: number, widths: number[] = IMAGE_WIDTHS as unknown as number[]): number {
+  if (widths.length === 0) return 0;
   const target = Math.max(1, cssWidth) * 2;
-  for (const width of IMAGE_WIDTHS) {
+  for (const width of widths) {
     if (width >= target) return width;
   }
-  return IMAGE_WIDTHS[IMAGE_WIDTHS.length - 1]!;
+  return widths[widths.length - 1]!;
 }
 
 /**
- * A single URL to put in `src`: the smallest tier that still covers the slot, or
- * the original when this picture has no derivatives. `src` is only a fallback
- * for clients that ignore `srcset`, but it still has to be cheap.
+ * A single URL to put in `src`: the smallest surviving tier that still covers the
+ * slot, or the original when this picture has no derivatives left. `src` is only
+ * a fallback for clients that ignore `srcset`, but it still has to be cheap.
  */
 export function imageUrl(src: string, cssWidth: number): string {
-  if (isMissingDerivative(src) || !hasDerivatives(src)) return src;
-  return derivativeUrl(src, pickDerivativeWidth(cssWidth)) ?? src;
+  const widths = availableWidths(src);
+  if (widths.length === 0) return src;
+  const width = pickDerivativeWidth(cssWidth, widths);
+  return derivativeUrl(src, width) ?? src;
 }
 
 /**
  * The cheap "preview" version of a picture, used to paint a slot instantly while
  * the sharper version is still arriving. Returns null when the picture has no
- * derivative, so the caller can fall back to a spinner instead of a blurred
- * nothing.
+ * derivative at that width (so the caller falls back to a spinner rather than a
+ * blurred nothing), and null when the picture is not a Storage object.
  */
 export function previewUrl(
   src: string | null | undefined,
-  width: number = THUMBNAIL_WIDTH
+  width: number = THUMBNAIL_WIDTH,
 ): string | null {
-  if (!src || isMissingDerivative(src)) return null;
+  if (!src) return null;
+  if (!availableWidths(src).includes(width)) return null;
   return derivativeUrl(src, width);
 }
