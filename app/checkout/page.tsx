@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useCart } from '@/lib/cart-context';
+import { SmartImage } from '@/components/smart-image';
+import { IMAGE_SIZES } from '@/lib/image-url';
 import { ArrowLeft, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -188,7 +190,14 @@ export default function CheckoutPage() {
                         {/* Placeholder for product image */}
                         <div className="w-20 h-20 bg-card/50 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                           {item.image ? (
-                            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                            /* 80px line item - a thumbnail, not the original. */
+                            <SmartImage
+                              src={item.image}
+                              cssWidth={80}
+                              sizes={IMAGE_SIZES.cartLine}
+                              alt={item.name}
+                              className="w-full h-full object-cover"
+                            />
                           ) : (
                             <span className="text-3xl">★</span>
                           )}

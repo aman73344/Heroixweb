@@ -32,6 +32,8 @@ import { useRouter } from "next/navigation";
 import { getProducts } from "@/lib/catalogue";
 import { parseVariants, getVariantImages, getVariantPrice } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
+import { SmartImage } from "@/components/smart-image";
+import { IMAGE_SIZES } from "@/lib/image-url";
 import { StarRating } from "@/components/star-rating";
 import { RotatingTagline } from "@/components/rotating-tagline";
 import { ScrollReveal } from "@/components/scroll-reveal";
@@ -214,7 +216,7 @@ export function StorefrontHome({
         {/* Background Anime Layer */}
         <div className="absolute inset-0 z-0">
           <Image
-            src="/anime-bg.jpg"
+            src="/anime-bg.webp"
             alt="Anime Background"
             fill
             className="object-cover opacity-30"
@@ -287,7 +289,7 @@ export function StorefrontHome({
             {/* Right side - Superhero Background */}
             <div className="relative h-96 md:h-[500px] animate-in fade-in slide-in-from-right duration-700">
               <Image
-                src="/superhero-bg.jpg"
+                src="/superhero-bg.webp"
                 alt="Superhero Background"
                 fill
                 className="object-cover rounded-3xl shadow-2xl"
@@ -376,7 +378,7 @@ export function StorefrontHome({
             is genuinely nothing to show yet. */}
         {sortedProducts.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedProducts.map((product: any) => {
+            {sortedProducts.map((product: any, cardIndex: number) => {
             const parsedVariants = parseVariants(product.variants, Number(product.stock) || 0);
             const hasVariants = parsedVariants.length > 0;
             const stockValue =
@@ -410,12 +412,18 @@ export function StorefrontHome({
               onPointerDown={() => prefetchProduct(product.id)}
             >
               {/* Product Image Carousel - cycles the product's photos AND all of its
-                  design pictures, so every design is visible right in the grid. */}
+                  design pictures, so every design is visible right in the grid.
+                  It downloads the picture on screen plus the next one, and only
+                  as small WebP derivatives - never the full-size originals, and
+                  never the whole gallery behind the arrows. Only the first few
+                  cards are marked priority, so the grid does not fire seventy
+                  competing high-priority requests at once. */}
               <ProductImageCarousel
                 images={product.image_urls || product.images}
                 productImage={product.image}
                 productName={product.name}
                 variantImages={collectVariantPictures(parsedVariants)}
+                priority={cardIndex < 3}
               />
 
               {/* Design Sub-Pictures Strip - one thumbnail per design picture */}
@@ -437,10 +445,15 @@ export function StorefrontHome({
                           className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors"
                           title={`${pic.name}${pic.pictureCount > 1 ? ` (picture ${pic.pictureIndex} of ${pic.pictureCount})` : ""}${pic.stock <= 0 ? " (Out of stock)" : ` - ${pic.stock} left`}`}
                         >
-                          <img
+                          {/* A 40px chip. This used to be a bare <img> with no
+                              loading attribute, so every chip on the page - one
+                              per design picture of every product - eagerly
+                              downloaded a full-resolution 785 KB original. */}
+                          <SmartImage
                             src={pic.image}
+                            cssWidth={40}
+                            sizes={IMAGE_SIZES.designChip}
                             alt={pic.name}
-                            draggable={false}
                             className="w-full h-full object-cover select-none [-webkit-user-drag:none]"
                           />
                         </button>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getProducts } from "@/lib/catalogue";
 import { getSiteUrl } from "@/lib/site-url";
+import { imageUrl } from "@/lib/image-url";
 
 // Per-product titles and descriptions for search engines.
 //
@@ -58,6 +59,13 @@ export async function generateMetadata({
     const image =
       (Array.isArray(product.images) && product.images[0]) || product.image || null;
 
+    // Social platforms fetch this url themselves, on every share, for every
+    // crawler that indexes the catalogue. Asking for the 800px WebP derivative
+    // instead of the 1080px original keeps the picture looking the same to the
+    // crawler at a third of the bytes - this is Supabase egress that no shopper
+    // ever benefits from.
+    const shareImage = image ? imageUrl(image, 800) : null;
+
     return {
       title,
       description: String(description).slice(0, 300),
@@ -67,7 +75,7 @@ export async function generateMetadata({
         url: `${getSiteUrl()}/products/${product.id}`,
         title: brandedTitle,
         description: String(description).slice(0, 300),
-        ...(image ? { images: [{ url: image }] } : {}),
+        ...(shareImage ? { images: [{ url: shareImage }] } : {}),
       },
     };
   } catch (error) {

@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { SmartImage } from "@/components/smart-image";
+import { IMAGE_SIZES } from "@/lib/image-url";
+import { usePreloadBudget } from "@/hooks/use-preload-budget";
 
 export interface VariantPicture {
   name: string;
@@ -22,6 +25,18 @@ export interface VariantPicture {
  * It cycles through the product's own photos AND the pictures of its designs,
  * so a keychain with several designs shows all of them right in the grid -
  * with arrows, dots, a counter and the design name badge.
+ *
+ * HOW MANY PICTURES THIS MAY DOWNLOAD
+ * Only the picture on screen, plus the next one when the connection allows it.
+ * This used to render the whole list stacked and rely on `loading="lazy"`, which
+ * changed nothing: a browser fetches an <img> that is merely transparent or
+ * behind another slide, so a single card could pull six 785 KB originals out of
+ * Supabase Storage before anyone tapped it, and the home page paid that for all
+ * seventy products. Mounting is what decides a request - a picture that is not
+ * in the tree costs nothing.
+ *
+ * The pictures themselves are small WebP derivatives (see lib/image-url.ts), so
+ * what is left is a thumbnail-sized request per card instead of a full gallery.
  */
 export function ProductImageCarousel({
   images,
@@ -29,12 +44,20 @@ export function ProductImageCarousel({
   productImage,
   variantImages = [],
   heightClass = "h-48",
+  priority = false,
 }: {
   images?: string[];
   productName: string;
   productImage?: string;
   variantImages?: VariantPicture[];
   heightClass?: string;
+  /**
+   * True only for the cards that are actually on screen when the grid paints.
+   * Before this existed every card marked its first picture `eager` +
+   * `fetchPriority="high"`, which is 70 competing high-priority requests on the
+   * home page and made every one of them slow.
+   */
+  priority?: boolean;
 }) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
@@ -49,8 +72,9 @@ export function ProductImageCarousel({
   // Append the design pictures that are not already in the list.
   const variantPictures = variantImages.filter((v) => v.image && !baseImages.includes(v.image));
 
-  // Memoised: a new array on every render would make the preload effect below
-  // fire constantly and keep re-downloading pictures.
+  // Memoised so the list identity is stable across renders: `mountedIndexes`
+  // and the "keep the index valid" effect both depend on it, and a fresh array
+  // on every render would make the carousel think the picture set changed.
   const imageList: string[] = useMemo(
     () => [...baseImages, ...variantPictures.map((v) => v.image)],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,12 +87,18 @@ export function ProductImageCarousel({
     ? variantPictures.find((v) => v.image === displayImage)?.name || ""
     : "";
 
-  // --- Mobile / slow-network fixes -------------------------------------------
-  // Every picture is rendered (stacked) instead of swapping a single <img> src.
-  // Swapping src forces a fresh network request per tap, which is what made the
-  // arrows feel like they "lagged". Keeping them in the DOM lets the browser
-  // fetch them up front, so switching is instant.
-  const [loaded, setLoaded] = useState<Record<number, boolean>>({});
+  // --- Which pictures may be in the DOM at all ------------------------------
+  // A picture that is mounted is a picture the browser downloads, whatever its
+  // opacity or position. So the active one always, and the next one only when
+  // the connection says there is headroom; everything further away waits for the
+  // customer to actually go there (via an arrow, a dot or a swipe), at which
+  // point it is mounted and starts loading on the spot.
+  const preloadBudget = usePreloadBudget();
+
+  // Keyed by URL, not by index: a design switch replaces the picture at an index
+  // with a different one, and index-keyed state reported the old picture as
+  // "already loaded" and skipped straight to hiding it.
+  const [settled, setSettled] = useState<Record<string, boolean>>({});
   const touchStartX = useRef<number | null>(null);
 
   // The picture list can change (product/design switch), so keep the index valid.
@@ -76,19 +106,20 @@ export function ProductImageCarousel({
     if (currentImageIndex > imageList.length - 1) setCurrentImageIndex(0);
   }, [imageList.length, currentImageIndex]);
 
-  // Preload the neighbours so the next/previous tap is instant.
-  useEffect(() => {
-    if (!hasMultipleImages || typeof window === "undefined") return;
-    const neighbours = [
-      imageList[(currentImageIndex + 1) % imageList.length],
-      imageList[(currentImageIndex - 1 + imageList.length) % imageList.length],
-    ];
-    for (const src of neighbours) {
-      if (!src) continue;
-      const img = new window.Image();
-      img.src = src;
+  const mountedIndexes = useMemo(() => {
+    const set = new Set<number>([currentImageIndex]);
+    if (preloadBudget > 0 && imageList.length > 1) {
+      set.add((currentImageIndex + 1) % imageList.length);
     }
-  }, [currentImageIndex, hasMultipleImages, imageList]);
+    return set;
+  }, [currentImageIndex, imageList.length, preloadBudget]);
+
+  const markSettled = (src: string) =>
+    setSettled((prev) => (prev[src] ? prev : { ...prev, [src]: true }));
+
+  // The active picture is worth a spinner; a warmed-up neighbour is not going to
+  // be looked at yet, so it never shows one.
+  const activePending = displayImage ? settled[displayImage] === undefined : false;
 
   const goToPrevious = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -128,36 +159,35 @@ export function ProductImageCarousel({
     >
       {displayImage ? (
         <>
-          {/* All pictures, stacked. Only the active one is visible, so there is
-              no re-download when the customer taps an arrow. */}
-          {imageList.map((src, idx) => (
-            <img
-              key={`${src}-${idx}`}
-              src={src}
-              alt={idx === currentImageIndex ? productName : ""}
-              aria-hidden={idx !== currentImageIndex}
-              // The first picture is what the customer sees first: fetch it ASAP.
-              loading={idx === 0 ? "eager" : "lazy"}
-              fetchPriority={idx === 0 ? "high" : "auto"}
-              decoding="async"
-              // A draggable image starts dragging before the click fires, so on
-              // a phone a tap on the card could end up doing nothing. This is
-              // the picture the customer taps most, so it must stay tappable.
-              draggable={false}
-              onLoad={() =>
-                setLoaded((prev) => (prev[idx] ? prev : { ...prev, [idx]: true }))
-              }
-              // The picture zooms in gently on hover on a laptop, and gets a soft
-              // brightness lift on a touch device where there is no hover.
-              className={`absolute inset-0 w-full h-full object-contain transition-[opacity,transform,filter] duration-500 ease-out group-hover:scale-105 touch:brightness-105 select-none [-webkit-user-drag:none] ${
-                idx === currentImageIndex ? "opacity-100" : "opacity-0 pointer-events-none"
-              }`}
-              style={{ zIndex: idx === currentImageIndex ? 1 : 0 }}
-            />
-          ))}
+          {/* Only the pictures in `mountedIndexes` exist in the DOM. Keys are
+              stable, so an arrow tap does not unmount and remount a picture that
+              is already there - which is what used to make the arrows feel like
+              they stalled while the browser re-requested the file. */}
+          {imageList.map((src, idx) =>
+            mountedIndexes.has(idx) ? (
+              <SmartImage
+                key={`${src}-${idx}`}
+                src={src}
+                cssWidth={384}
+                sizes={IMAGE_SIZES.card}
+                alt={idx === currentImageIndex ? productName : ""}
+                aria-hidden={idx !== currentImageIndex}
+                // The picture on screen now is the one the customer is waiting
+                // for; everything else waits for the viewport.
+                loading={idx === currentImageIndex && priority ? "eager" : "lazy"}
+                fetchPriority={idx === currentImageIndex && priority ? "high" : "auto"}
+                className={`absolute inset-0 w-full h-full object-contain transition-[opacity,transform,filter] duration-500 ease-out group-hover:scale-105 touch:brightness-105 select-none [-webkit-user-drag:none] ${
+                  idx === currentImageIndex ? "opacity-100" : "opacity-0 pointer-events-none"
+                }`}
+                // Inline opacity, so this never collides with the class above.
+                style={{ zIndex: idx === currentImageIndex ? 1 : 0 }}
+                onLoad={() => markSettled(src)}
+              />
+            ) : null
+          )}
 
           {/* Spinner while the active picture is still downloading. */}
-          {loaded[currentImageIndex] === false && (
+          {activePending && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[1]">
               <div className="h-8 w-8 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
             </div>

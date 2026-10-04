@@ -18,6 +18,8 @@ import { getProducts, getCatalogueCache } from "@/lib/catalogue";
 import { parseVariants, getVariantImages, getVariantPrice, hasOwnVariantPrice, ProductVariant } from "@/lib/variants";
 import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
 import { ProductGallery } from "@/components/product-gallery";
+import { SmartImage } from "@/components/smart-image";
+import { IMAGE_SIZES } from "@/lib/image-url";
 import { StoreFooter } from "@/components/store-footer";
 import { ScrollReveal } from "@/components/scroll-reveal";
 import { StarRating } from "@/components/star-rating";
@@ -291,7 +293,7 @@ export default function ProductPage() {
         {/* Background Anime Layer */}
         <div className="absolute inset-0 z-0">
           <Image
-            src="/anime-bg.jpg"
+            src="/anime-bg.webp"
             alt="Anime Background"
             fill
             className="object-cover opacity-30"
@@ -304,8 +306,10 @@ export default function ProductPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             {/* Left side - Product Images */}
             <div className="space-y-6">
-              {/* Pictures are preloaded in the DOM (no re-download per tap) and the arrows
-                are always visible on phones. */}
+              {/* The gallery shows a cheap thumbnail straight away and fades the sharper
+                picture in over it, warming the next picture in the background
+                and never fetching the rest until the customer goes there. The
+                arrows stay reachable on a phone. */}
               <ProductGallery
                 images={activeImages}
                 index={safeImageIndex}
@@ -372,8 +376,11 @@ export default function ProductPage() {
               {activeVariantObj && (
                 <div className="flex items-start gap-3 rounded-xl border border-accent/40 bg-accent/10 p-3">
                   {activeVariantObj.image && (
-                    <img
+                    /* 64px chip - a thumbnail, never the original. */
+                    <SmartImage
                       src={activeVariantObj.image}
+                      cssWidth={64}
+                      sizes={IMAGE_SIZES.designSummary}
                       alt={activeVariantObj.name}
                       className="w-16 h-16 rounded-lg object-cover border border-accent/30 flex-shrink-0"
                     />
@@ -559,8 +566,14 @@ export default function ProductPage() {
                       >
                         <div className="relative w-full aspect-square bg-card/60">
                           {cardImage ? (
-                            <img
+                            /* A design card is a listing slot, not a gallery: it
+                               shows the design's main picture as a thumbnail. The
+                               sharp version of that same picture is already in
+                               the big gallery once the design is selected. */
+                            <SmartImage
                               src={cardImage}
+                              cssWidth={272}
+                              sizes={IMAGE_SIZES.designCard}
                               alt={variant.name}
                               className={`w-full h-full object-cover ${
                                 isVariantOut ? "opacity-50 grayscale" : ""
@@ -625,8 +638,10 @@ export default function ProductPage() {
                                       : "border-border hover:border-accent/60"
                                   } ${isVariantOut ? "opacity-50 grayscale" : ""}`}
                                 >
-                                  <img
+                                  <SmartImage
                                     src={pic}
+                                    cssWidth={48}
+                                    sizes={IMAGE_SIZES.designPictureChip}
                                     alt={`${variant.name} picture ${picIdx + 1}`}
                                     className="w-full h-full object-cover"
                                   />
@@ -745,7 +760,7 @@ export default function ProductPage() {
             )
           )
             .slice(0, 6)
-            .map((relatedProduct: any) => {
+            .map((relatedProduct: any, relatedIndex: number) => {
               // Same as the home page grid: the card cycles the product's photos AND
               // every picture of every one of its designs.
               const relatedDesigns = parseVariants(
@@ -773,6 +788,7 @@ export default function ProductPage() {
                   productImage={relatedProduct.image}
                   productName={relatedProduct.name}
                   variantImages={relatedDesignPictures}
+                  priority={relatedIndex < 3}
                 />
 
                 {/* Design thumbnails, exactly like the home page grid */}
@@ -795,10 +811,11 @@ export default function ProductPage() {
                             className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors"
                             title={`${pic.name}${pic.pictureCount > 1 ? ` (picture ${pic.pictureIndex} of ${pic.pictureCount})` : ""}${pic.stock <= 0 ? " (Out of stock)" : ` - ${pic.stock} left`}`}
                           >
-                            <img
+                            <SmartImage
                               src={pic.image}
+                              cssWidth={40}
+                              sizes={IMAGE_SIZES.designChip}
                               alt={pic.name}
-                              draggable={false}
                               className="w-full h-full object-cover select-none [-webkit-user-drag:none]"
                             />
                           </button>

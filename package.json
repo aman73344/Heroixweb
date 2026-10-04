@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "setup-supabase": "node scripts/setup-supabase.js",
+    "images:optimize": "node scripts/generate-image-derivatives.mjs",
+    "images:optimize:dry": "node scripts/generate-image-derivatives.mjs --dry-run",
     "test-products": "node scripts/test-products.js",
     "typecheck": "tsc --noEmit",
     "test:security": "node scripts/security-check.mjs",

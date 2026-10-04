@@ -115,11 +115,12 @@ Heroixweb/
 |--scripts/ Setup and utility scripts
 | |--setup-supabase.js Supabase database setup
 | |--test-products.js Product testing script
+| |--generate-image-derivatives.mjs Builds the WebP thumbnails the site downloads
 |
 |--public/ Static assets
 | |--heroix-logo.png Brand logo
-| |--anime-bg.jpg Background images
-| |--superhero-bg.jpg
+| |--anime-bg.webp Background images
+| |--superhero-bg.webp
 |
 |--products.json Product catalog (local fallback)
 |--.env.example Environment template
@@ -371,6 +372,67 @@ A keychain can be sold in several designs. Admin -> Products -> edit a product
 4. Orders not saving:
    - Verify orders table exists with correct schema
    - Check RLS policies for insert permissions
+
+## IMAGE LOADING (thumbnails first, gallery on demand)
+
+Supabase Storage is where nearly all of this site's bandwidth goes, and its
+free-plan egress allowance is small. The rule the whole app now follows is:
+
+> **Listing pages download thumbnails. The product page downloads the gallery.**
+
+### Why not Supabase image transformations?
+
+`/storage/v1/render/image/public/...` was tried against this project and
+answered **HTTP 403 "Image Transformations are not allowed"** - it is a paid
+feature and this project is on the free plan. There is no second image service
+in the project, so the smaller files have to exist before they are requested.
+
+### How it works
+
+`npm run images:optimize` (`scripts/generate-image-derivatives.mjs`) walks the
+catalogue, re-encodes every picture to WebP at the widths in
+`lib/image-url.ts` (`400` and `800`), and uploads the result next to the
+original inside the same public bucket:
+
+```
+original    .../object/public/products/prod-17/1776162067135-1.jpeg   ~785 KB
+thumbnail   .../object/public/_thumbs/products/prod-17/...@400.webp    ~62 KB
+gallery     .../object/public/_thumbs/products/prod-17/...@800.webp   ~273 KB
+```
+
+The derivatives are uploaded with `cache-control: max-age=31536000`, so the
+browser and the CDN stop re-asking for them. Nothing is deleted and no original
+is modified - removing the `_thumbs/` folder reverts the whole optimisation.
+
+### Which pictures may be downloaded
+
+| Where | What is downloaded |
+| --- | --- |
+| Product card (home, related products) | the picture on screen + the next one, as WebP derivatives |
+| Design chip strip, cart lines, design cards | 400px thumbnail only |
+| Product gallery | 400px preview, then the 800px picture fades in over it |
+| Gallery pictures further away | not mounted, so not requested, until the customer goes there |
+| Variant (design) galleries | only the selected design's |
+
+A picture that is merely transparent, behind another slide or one carousel step
+away **is still downloaded** by the browser. That is why the rule is expressed
+as *mounted or not mounted*, not as `loading="lazy"` - and why
+`loading="lazy"` on its own was never going to fix this.
+
+### Adding a product?
+
+Run `npm run images:optimize` again. It skips anything already generated, so a
+re-run only picks up new pictures. Until you do, the missing thumbnail is
+noticed at runtime and the original is used instead - the page still works.
+
+### Verifying it
+
+Chrome DevTools -> Network -> filter `supabase.co`:
+
+- Home page: one small WebP per card, `loading="lazy"`, no `.jpeg` originals.
+- Product page: the 400px preview and the 800px picture for the selected
+  picture, then nothing more until you tap the arrow.
+
 
 ## PERFORMANCE FEATURES
 
