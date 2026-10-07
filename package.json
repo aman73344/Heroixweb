@@ -14,6 +14,8 @@
     "images:test-fallback": "node scripts/verify-missing-derivative.mjs",
     "test:gallery": "node scripts/verify-gallery-live.mjs",
     "test-products": "node scripts/test-products.js",
+    "export:project": "node scripts/export-project.mjs",
+    "export:project:dry": "node scripts/export-project.mjs --dry-run",
     "typecheck": "tsc --noEmit",
     "test:security": "node scripts/security-check.mjs",
     "test:stock": "node scripts/test-reserve-stock.mjs",
