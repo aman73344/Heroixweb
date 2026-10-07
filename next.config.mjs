@@ -4,6 +4,14 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
+    // Deliberate, and part of the egress fix: every picture is pre-resized
+    // into 400/800px WebP derivatives inside the bucket (lib/image-url.ts +
+    // scripts/generate-image-derivatives.mjs, plus derivatives generated
+    // automatically at upload time in app/admin/products), so <SmartImage>
+    // already hands the browser the right file. Enabling the optimizer would
+    // make the server re-download the FULL-SIZE original from Supabase to
+    // resize it again - one extra origin hit per visitor per image, which is
+    // precisely the traffic that exhausted the cached-egress quota once.
     unoptimized: true,
   },
   env: {

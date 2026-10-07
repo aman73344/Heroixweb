@@ -21,6 +21,7 @@ import {
   ShoppingCart,
   RefreshCw,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { ChatModal } from "@/components/chat-modal";
@@ -30,8 +31,8 @@ import { useRouter } from "next/navigation";
 // imports the server-only `lib/supabase-admin` and would throw on module
 // evaluation in the browser, breaking hydration of the whole page.
 import { getProducts } from "@/lib/catalogue";
-import { parseVariants, getVariantImages, getVariantPrice } from "@/lib/variants";
-import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
+import { parseVariants, getVariantPrice } from "@/lib/variants";
+import { collectVariantPictures } from "@/components/product-image-carousel";
 import { SmartImage } from "@/components/smart-image";
 import { IMAGE_SIZES } from "@/lib/image-url";
 import { StarRating } from "@/components/star-rating";
@@ -41,6 +42,15 @@ import { StoreFooter } from "@/components/store-footer";
 import { getCategoryFilterOptions } from "@/lib/categories";
 import { sortProducts, SORT_OPTIONS, DEFAULT_SORT, type SortKey } from "@/lib/sorting";
 import { normalizeRating, normalizeReviewCount, DEFAULT_RATING } from "@/lib/reviews";
+
+/**
+ * How many cards the home grid renders before it asks the customer to press
+ * "See More". Twelve fills a phone screen about three times over, loads in a
+ * blink on mobile data, and means a first visit pulls a dozen small WebPs
+ * instead of every picture in the catalogue - which is also what keeps the
+ * Supabase egress quota (the one that already got blown once) under control.
+ */
+const PAGE_SIZE = 12;
 
 export function StorefrontHome({
   initialProducts = [],
@@ -53,6 +63,10 @@ export function StorefrontHome({
   // which sit above 300-350.
   const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
   const [chatOpen, setChatOpen] = useState(false);
+  // The category drawer opened by the three-slash button in the navbar.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // How many cards of the current filter are on screen (see PAGE_SIZE).
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   // Seeded from the server render, so the first paint already shows the products
   // and matches the server HTML exactly (no hydration mismatch).
   const [productList, setProductList] = useState<any[]>(initialProducts);
@@ -91,6 +105,14 @@ export function StorefrontHome({
     [filteredProducts, sortKey]
   );
 
+  // Only the first page exists in the DOM. Cards past this line are cheap to
+  // compute but expensive to render - each one mounts an <img> - so they wait
+  // for "See More", or never arrive if the customer picks a genre first.
+  const visibleProducts = useMemo(
+    () => sortedProducts.slice(0, visibleCount),
+    [sortedProducts, visibleCount]
+  );
+
   // "All" + every real category (Anime, Superhero, Marvel, DC, Sports, Gaming,
   // Others, plus anything else the admin has used) - so a product can never be
   // hidden behind a category that is missing from the filter bar.
@@ -98,6 +120,17 @@ export function StorefrontHome({
     () => getCategoryFilterOptions(productList.map((p: any) => p.category)),
     [productList]
   );
+
+  // Badge counts for the category drawer: how many products sit behind each
+  // genre, so a shopper can see at a glance where the catalogue is deep.
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of productList) {
+      const category = String(p?.category || "").trim() || "Others";
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+    return counts;
+  }, [productList]);
 
   // The store's average rating, weighted by how many reviews each product has.
   // Products that have no reviews of their own still count, using the store
@@ -121,6 +154,29 @@ export function StorefrontHome({
       setSelectedCategory("All");
     }
   }, [selectedCategory, categoryOptions]);
+
+  // Switching genre or sort starts the customer back at page one, so nobody
+  // ever sees the tail of a list that no longer applies.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [selectedCategory, sortKey]);
+
+  // While the category drawer is open it owns the screen: Escape closes it and
+  // the page behind it stops scrolling (a scrolling backdrop under a drawer is
+  // the classic mobile bug).
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [sidebarOpen]);
 
   // Tapping a card has to feel instant on a phone: the route is warmed while
   // the finger is still on its way down, and the product page reuses the
@@ -172,20 +228,52 @@ export function StorefrontHome({
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Navigation */}
+      {/* Navigation. Three zones laid out as grid-cols-[1fr_auto_1fr] so the
+          wordmark is ALWAYS dead centre - flex justify-between cannot do that,
+          because the left and right controls are different widths. */}
       <nav className="border-b border-border bg-card/50 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          {/* Left: the "three slashes" trigger. Big enough to hit with a thumb,
+              and labelled from sm up so nobody has to guess what it opens. */}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Browse categories"
+            aria-expanded={sidebarOpen}
+            aria-controls="category-sidebar"
+            className="group justify-self-start inline-flex items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2 text-foreground transition-all duration-200 hover:border-accent hover:bg-accent/10 active:scale-95"
+          >
+            {/* Three skewed bars: reads as a hamburger everywhere, and as a
+                little mark of its own rather than a generic icon. The bars
+                stagger on hover so the button feels alive under the cursor. */}
+            <span className="flex flex-col items-stretch justify-between h-4 w-5" aria-hidden="true">
+              <span className="block h-[2px] w-full -skew-x-12 rounded-full bg-current transition-all duration-200 group-hover:w-4 group-hover:bg-accent" />
+              <span className="block h-[2px] w-full -skew-x-12 rounded-full bg-current transition-all duration-200 group-hover:w-5 group-hover:bg-accent" />
+              <span className="block h-[2px] w-full -skew-x-12 rounded-full bg-current transition-all duration-200 group-hover:w-3 group-hover:bg-accent" />
+            </span>
+            <span className="hidden sm:inline text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-accent transition-colors">
+              Categories
+            </span>
+          </button>
+
+          {/* Centre: the HEROIX logo, bigger than before and truly centred. */}
+          <Link
+            href="/"
+            className="justify-self-center flex flex-col items-center group"
+            aria-label="HEROIX home"
+          >
             <Image
               src="/heroix-logo.png"
               alt="HEROIX"
-              width={80}
-              height={40}
-              className="h-8 w-auto transition-transform duration-300 hover:scale-105 touch:opacity-80"
+              width={200}
+              height={72}
+              className="h-9 sm:h-12 w-auto transition-transform duration-300 group-hover:scale-105"
+              priority
             />
-            {/* Was the flat "Premium Anime Keychains". Now it cycles the
-                categories so the navbar says something worth reading. */}
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-sm">
+            {/* Kept from the old navbar: cycles the genres so the line under
+                the logo says something worth reading. Desktop only - on a
+                phone every pixel of height belongs to the products. */}
+            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs">
               <span className="text-muted-foreground">So much to order:</span>
               <RotatingTagline
                 words={["Anime", "Marvel", "DC", "Gaming", "Sports"]}
@@ -193,11 +281,13 @@ export function StorefrontHome({
               />
               <span className="text-muted-foreground">keychains</span>
             </span>
-          </div>
-          <div className="flex items-center gap-4">
+          </Link>
+
+          {/* Right: cart, mirrored against the trigger to keep the grid balanced. */}
+          <div className="justify-self-end">
             <Link
               href="/checkout"
-              className="relative inline-flex rounded-full p-1 -m-1 transition-transform duration-200 hover:scale-110 active:scale-95 touch:bg-accent/10"
+              className="relative inline-flex rounded-full p-1.5 -m-1 transition-transform duration-200 hover:scale-110 active:scale-95 touch:bg-accent/10"
               aria-label="Your cart"
             >
               <ShoppingCart className="w-5 h-5 text-foreground" />
@@ -305,28 +395,10 @@ export function StorefrontHome({
         </div>
       </section>
 
-      {/* Category Filter */}
-      <ScrollReveal>
-        <section className="border-b border-border bg-card/30 py-6">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex items-center gap-2 overflow-x-auto pb-2">
-              {categoryOptions.map((category) => (
-                <button
-                  key={category}
-                  onClick={() => setSelectedCategory(category)}
-                  className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-95 ${
-                    selectedCategory === category
-                      ? "bg-accent text-accent-foreground"
-                      : "bg-card text-foreground hover:bg-card/80 touch:bg-accent/10"
-                  }`}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-      </ScrollReveal>
+      {/* The old horizontal category-chip strip used to live here, hanging
+          under the hero. Categories now belong to the drawer behind the
+          three-slash button in the navbar - one home for them instead of two
+          half-maintained copies. */}
 
       {/* Products Grid. Only the heading animates in: the grid itself is never
           wrapped in ScrollReveal, because hiding the products behind an
@@ -377,8 +449,12 @@ export function StorefrontHome({
             "the products disappeared". The flag may now only take over when there
             is genuinely nothing to show yet. */}
         {sortedProducts.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedProducts.map((product: any, cardIndex: number) => {
+          <>
+          {/* Two columns on a phone (the old single column made each card
+              taller than the screen), three on a small laptop, four on a big
+              one - the density every other store already has. */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4 lg:gap-5">
+            {visibleProducts.map((product: any) => {
             const parsedVariants = parseVariants(product.variants, Number(product.stock) || 0);
             const hasVariants = parsedVariants.length > 0;
             const stockValue =
@@ -398,6 +474,17 @@ export function StorefrontHome({
                 : Math.min(...designPrices) === Math.max(...designPrices)
                   ? `Rs ${Math.min(...designPrices)}`
                   : `Rs ${Math.min(...designPrices)} - ${Math.max(...designPrices)}`;
+            // Exactly one picture for the grid: the first frame of the product's
+            // own gallery, else its main image, else the first design picture -
+            // the same order the old carousel showed first, minus everything
+            // after frame one.
+            const gallery = (product.image_urls || product.images || []) as string[];
+            const cardImage: string =
+              gallery.filter(Boolean)[0] ||
+              product.image ||
+              collectVariantPictures(parsedVariants)[0]?.image ||
+              "/placeholder.jpg";
+
             return (
             <Card
               key={product.id}
@@ -411,65 +498,34 @@ export function StorefrontHome({
               onPointerEnter={() => prefetchProduct(product.id)}
               onPointerDown={() => prefetchProduct(product.id)}
             >
-              {/* Product Image Carousel - cycles the product's photos AND all of its
-                  design pictures, so every design is visible right in the grid.
-                  It downloads the picture on screen plus the next one, and only
-                  as small WebP derivatives - never the full-size originals, and
-                  never the whole gallery behind the arrows. Only the first few
-                  cards are marked priority, so the grid does not fire seventy
-                  competing high-priority requests at once. */}
-              <ProductImageCarousel
-                images={product.image_urls || product.images}
-                productImage={product.image}
-                productName={product.name}
-                variantImages={collectVariantPictures(parsedVariants)}
-                priority={cardIndex < 3}
-              />
-
-              {/* Design Sub-Pictures Strip - one thumbnail per design picture */}
-              {parsedVariants.some((v) => getVariantImages(v).length > 0) && (
-                <div className="px-4 pt-3 space-y-1.5">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                    Designs ({parsedVariants.filter((v) => getVariantImages(v).length > 0).length})
-                  </p>
-                  <div className="flex gap-2 overflow-x-auto pb-0.5">
-                    {collectVariantPictures(parsedVariants).map((pic, picIdx) => {
-                      return (
-                        <button
-                          key={`${pic.designIndex}-${pic.pictureIndex}-${picIdx}`}
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/products/${product.id}`);
-                          }}
-                          className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors"
-                          title={`${pic.name}${pic.pictureCount > 1 ? ` (picture ${pic.pictureIndex} of ${pic.pictureCount})` : ""}${pic.stock <= 0 ? " (Out of stock)" : ` - ${pic.stock} left`}`}
-                        >
-                          {/* A 40px chip. This used to be a bare <img> with no
-                              loading attribute, so every chip on the page - one
-                              per design picture of every product - eagerly
-                              downloaded a full-resolution 785 KB original. */}
-                          <SmartImage
-                            src={pic.image}
-                            cssWidth={40}
-                            sizes={IMAGE_SIZES.designChip}
-                            alt={pic.name}
-                            className="w-full h-full object-cover select-none [-webkit-user-drag:none]"
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {/* Product Info */}
-              <div className="p-4 space-y-4">
+              {/* ONE picture per card, not a carousel. The old card mounted the
+                  carousel (the visible frame plus a warmed-up neighbour) AND a
+                  strip of design chips - up to six downloads per card times
+                  seventy cards. The home grid only needs a first impression:
+                  one lazy ~30 KB WebP instead of several hundred KB, with the
+                  full gallery one tap away on the product page. */}
+              <div className="relative aspect-square overflow-hidden bg-muted/40">
+                <SmartImage
+                  src={cardImage}
+                  cssWidth={240}
+                  sizes={IMAGE_SIZES.gridCard}
+                  alt={product.name}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
+                {isOutOfStock && (
+                  <span className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                    Out of Stock
+                  </span>
+                )}
+              </div>
+              {/* Product Info - compact so two cards fit side by side on a phone */}
+              <div className="p-2.5 sm:p-4 space-y-2 sm:space-y-3">
                 <div>
                   {/* A real href link, not just an onClick. This is the only thing
                       a crawler can follow from the grid, and it also buys keyboard
                       focus and "open in new tab" for free. The whole card still
                       navigates on tap through the onClick on the Card itself. */}
-                  <h3 className="font-bold text-lg text-foreground group-hover:text-accent touch:text-accent transition-colors">
+                  <h3 className="font-bold text-sm sm:text-base leading-snug line-clamp-2 text-foreground group-hover:text-accent touch:text-accent transition-colors">
                     <Link
                       href={`/products/${product.id}`}
                       onClick={(e) => e.stopPropagation()}
@@ -487,7 +543,7 @@ export function StorefrontHome({
                 {/* Price and Action */}
                 <div className="flex items-center justify-between pt-2 border-t border-border">
                   <div>
-                    <p className="text-2xl font-bold text-accent">
+                    <p className="text-base sm:text-xl font-bold text-accent">
                       {designPriceLabel}
                     </p>
                     <p
@@ -542,7 +598,25 @@ export function StorefrontHome({
             </Card>
             );
           })}
-        </div>
+          </div>
+
+          {/* Pagination: the rest of the catalogue appears when it is asked
+              for - or never, if the customer picks a genre from the drawer. */}
+          {sortedProducts.length > visibleCount && (
+            <div className="mt-8 flex flex-col items-center gap-2">
+              <Button
+                type="button"
+                onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                className="bg-accent hover:bg-accent/90 text-accent-foreground px-8 py-2.5 rounded-xl font-semibold transition-all hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:scale-95"
+              >
+                See More ({sortedProducts.length - visibleCount} more)
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Showing {Math.min(visibleCount, sortedProducts.length)} of {sortedProducts.length} designs
+              </p>
+            </div>
+          )}
+          </>
         ) : loading ? (
           <div className="flex items-center justify-center py-20">
             <RefreshCw className="w-8 h-8 animate-spin text-accent" />
@@ -558,6 +632,101 @@ export function StorefrontHome({
         )}
       </section>
       <StoreFooter />
+
+      {/* Category sidebar, opened by the three-slash button in the navbar.
+          Slides in from the LEFT on every device - a phone holds it under one
+          thumb, a desktop gets the gesture the trigger suggests. Each row comes
+          alive on hover: an accent bar grows in from the edge, the row slides a
+          few pixels right, the background warms up and a chevron arrives from
+          the right. Small details, but they are the difference between a list
+          and something that feels real under the cursor. */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="Categories">
+          {/* Tap anywhere outside the panel to close it. */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          <aside
+            id="category-sidebar"
+            className="absolute left-0 top-0 h-full w-[82%] max-w-sm bg-card border-r border-border shadow-2xl flex flex-col animate-in slide-in-from-left duration-300"
+          >
+            <div className="flex items-center justify-between gap-3 px-4 py-4 border-b border-border">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-widest text-accent">
+                  Categories
+                </p>
+                <p className="text-xs text-muted-foreground">Pick a genre to explore</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Close categories"
+                className="rounded-lg border border-border p-2 text-muted-foreground transition-all hover:border-accent hover:text-accent hover:bg-accent/10 active:scale-95"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto p-3 space-y-1 overscroll-contain">
+              {categoryOptions.map((category) => {
+                const active = selectedCategory === category;
+                const count =
+                  category === "All"
+                    ? productList.length
+                    : categoryCounts.get(category) ?? 0;
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCategory(category);
+                      setSidebarOpen(false);
+                    }}
+                    className={`group relative w-full flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-left font-medium transition-all duration-200 ${
+                      active
+                        ? "bg-accent text-accent-foreground shadow-md shadow-accent/20"
+                        : "text-foreground hover:bg-accent/10 hover:text-accent hover:pl-6"
+                    }`}
+                  >
+                    {/* The accent bar that grows in from the left edge on hover -
+                        the "this row is alive" cue. The active row gets a solid
+                        bar immediately instead. */}
+                    <span
+                      className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 rounded-full bg-accent-foreground transition-all duration-200 ${
+                        active ? "h-3/5" : "h-0 group-hover:h-3/5"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">{category}</span>
+                    <span
+                      className={`flex items-center gap-1.5 text-xs ${
+                        active
+                          ? "text-accent-foreground/80"
+                          : "text-muted-foreground group-hover:text-accent"
+                      }`}
+                    >
+                      <span className="tabular-nums">{count}</span>
+                      <ChevronRight
+                        className={`w-3.5 h-3.5 transition-all duration-200 ${
+                          active
+                            ? "opacity-100 translate-x-0"
+                            : "opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0"
+                        }`}
+                      />
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="px-4 py-3 border-t border-border text-[11px] text-muted-foreground">
+              Tap a genre - the grid below updates instantly.
+            </div>
+          </aside>
+        </div>
+      )}
 
       {/* Floating Chat Button */}
       <button

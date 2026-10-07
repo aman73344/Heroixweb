@@ -63,6 +63,13 @@ export type ImageWidth = (typeof IMAGE_WIDTHS)[number];
 export const IMAGE_SIZES = {
   /** Product card carousel: the h-48 image area of a grid card. */
   card: "(min-width: 1024px) 24rem, (min-width: 640px) 46vw, 92vw",
+  /**
+   * The compact single-picture card in the home grid (2 / 3 / 4 columns at the
+   * base / sm / lg breakpoints). Smaller slots than `card` on purpose: the home
+   * page shows one 400px WebP per product instead of a carousel, and a tight
+   * `sizes` is what keeps the browser from picking the 800px tier anyway.
+   */
+  gridCard: "(min-width: 1024px) 18rem, (min-width: 640px) 30vw, 46vw",
   /** The 40px design chip strip under a product card. */
   designChip: "40px",
   /** The 48px per-picture chips inside a design card on the product page. */

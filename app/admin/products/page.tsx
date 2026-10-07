@@ -11,6 +11,7 @@ import { Edit2, Trash2, Plus, X, Upload, Loader2, ImageIcon } from "lucide-react
 // evaluation in the browser, breaking hydration of the whole page.
 import { getProducts } from "@/lib/catalogue";
 import { supabase } from "@/lib/supabase";
+import { derivativePath, IMAGE_WIDTHS } from "@/lib/image-url";
 import { parseVariants, formatVariantsForStorage, formatVariantsForTextarea, calculateEffectiveStock, getVariantImages, normalizeVariantImages, MAX_VARIANT_IMAGES, MAX_VARIANTS } from "@/lib/variants";
 import { PRODUCT_CATEGORIES } from "@/lib/categories";
 import { normalizeRating, normalizeReviewCount, DEFAULT_RATING } from "@/lib/reviews";
@@ -65,6 +66,61 @@ export default function ProductsPage() {
     images: [],
   });
 
+  // Renders `source` down to each width in IMAGE_WIDTHS and stores the result
+  // as `_thumbs/<key>@<width>.webp` - the exact layout lib/image-url.ts expects
+  // (and the same one `npm run images:optimize` produces for existing pictures).
+  //
+  // WHY THIS EXISTS: derivatives used to be a one-off backfill script. Anything
+  // uploaded AFTER that script ran had no thumbnail, SmartImage's fallback then
+  // pointed the grid at the full-size original, and the Supabase egress quota
+  // started leaking again. Generating the derivatives at upload time makes the
+  // cheap path the ONLY path - permanently, with no server, no sharp and no
+  // manual step to forget.
+  const uploadDerivatives = async (objectKey: string, source: File): Promise<void> => {
+    if (!source.type.startsWith("image/")) return;
+    try {
+      const objectUrl = URL.createObjectURL(source);
+      const img = await new Promise<HTMLImageElement | null>((resolve) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => resolve(null);
+        el.src = objectUrl;
+      });
+      if (!img) return;
+      for (const width of IMAGE_WIDTHS) {
+        // Never upscale - the generator makes the same promise.
+        const ratio = Math.min(1, width / img.naturalWidth);
+        const w = Math.max(1, Math.round(img.naturalWidth * ratio));
+        const h = Math.max(1, Math.round(img.naturalHeight * ratio));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) continue;
+        ctx.drawImage(img, 0, 0, w, h);
+        const blob = await new Promise<Blob | null>((resolve) =>
+          canvas.toBlob(resolve, "image/webp", 0.7),
+        );
+        if (!blob) continue;
+        const { error } = await supabase.storage
+          .from("products")
+          .upload(derivativePath(objectKey, width), blob, {
+            contentType: "image/webp",
+            // Content-addressed by width and never rewritten: a year of cache
+            // is what stops a returning admin session re-downloading thumbs.
+            cacheControl: "31536000",
+            upsert: true,
+          });
+        if (error) console.error("Derivative upload error:", error);
+      }
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      // Non-fatal: SmartImage falls back to the original if a tier is missing,
+      // and `npm run images:optimize` can always backfill later.
+      console.error("Derivative generation failed:", error);
+    }
+  };
+
   const uploadImageToStorage = async (file: File, productId: string, index: number): Promise<string | null> => {
     try {
       const fileExt = file.name.split('.').pop();
@@ -73,7 +129,12 @@ export default function ProductsPage() {
       const { error } = await supabase.storage
         .from('products')
         .upload(fileName, file, {
-          cacheControl: '3600',
+          // One year, because the key contains Date.now(): an upload never
+          // overwrites a previous picture, so the object is immutable. With the
+          // old max-age=3600 every CDN edge and browser re-fetched originals
+          // hourly - repeated fetches of full-size files are exactly what blew
+          // the Supabase cached-egress quota the first time.
+          cacheControl: '31536000',
           upsert: true,
         });
 
@@ -81,6 +142,12 @@ export default function ProductsPage() {
         console.error('Upload error:', error);
         return null;
       }
+
+      // The other half of the permanent fix: build the WebP thumbnails right
+      // now, in the browser, next to the original - so this NEW picture is
+      // instantly servable as a ~30 KB grid image instead of waiting for a
+      // manual `npm run images:optimize` run that is easy to forget.
+      await uploadDerivatives(fileName, file);
 
       const { data: urlData } = supabase.storage
         .from('products')
