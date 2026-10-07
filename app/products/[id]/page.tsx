@@ -867,6 +867,43 @@ export default function ProductPage() {
                   )}
                 </div>
 
+                {/* Design Sub-Pictures Strip - one thumbnail per design picture,
+                    exactly what the old card showed. A shopper can see every
+                    design straight from the grid. Chips are lazy-loaded 400px WebP
+                    derivatives via SmartImage, so this only costs a few KB per
+                    card actually scrolled into view - never the originals. */}
+                {relatedDesigns.some((v) => getVariantImages(v).length > 0) && (
+                  <div className="px-2.5 sm:px-4 pt-3 space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                      Designs (
+                      {relatedDesigns.filter((v) => getVariantImages(v).length > 0).length})
+                    </p>
+                    <div className="flex gap-2 overflow-x-auto pb-0.5">
+                      {collectVariantPictures(relatedDesigns).map((pic, picIdx) => {
+                        return (
+                          <button
+                            key={`${pic.designIndex}-${pic.pictureIndex}-${picIdx}`}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/products/${relatedProduct.id}`);
+                            }}
+                            className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors"
+                            title={`${pic.name}${pic.pictureCount > 1 ? ` (picture ${pic.pictureIndex} of ${pic.pictureCount})` : ""}${pic.stock <= 0 ? " (Out of stock)" : ` - ${pic.stock} left`}`}
+                          >
+                            <SmartImage
+                              src={pic.image}
+                              cssWidth={40}
+                              sizes={IMAGE_SIZES.designChip}
+                              alt={pic.name}
+                              className="w-full h-full object-cover select-none [-webkit-user-drag:none]"
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {/* Product Info - compact so two cards fit side by side on a
                     phone, same paddings and type scale as the home card. */}
                 <div className="p-2.5 sm:p-4 space-y-2 sm:space-y-3">
