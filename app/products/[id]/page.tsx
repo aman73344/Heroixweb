@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import {
   ShoppingCart,
   ChevronLeft,
+  ChevronRight,
   Sparkles,
 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
@@ -16,7 +17,7 @@ import { useCart } from "@/lib/cart-context";
 // evaluation in the browser, breaking hydration of the whole page.
 import { getProducts, getCatalogueCache } from "@/lib/catalogue";
 import { parseVariants, getVariantImages, getVariantPrice, hasOwnVariantPrice, ProductVariant } from "@/lib/variants";
-import { ProductImageCarousel, collectVariantPictures } from "@/components/product-image-carousel";
+import { collectVariantPictures } from "@/components/product-image-carousel";
 import { ProductGallery } from "@/components/product-gallery";
 import { SmartImage } from "@/components/smart-image";
 import { IMAGE_SIZES } from "@/lib/image-url";
@@ -158,6 +159,45 @@ export default function ProductPage() {
   const designsHaveMixedPrices =
     hasVariants &&
     new Set(parsedVariants.map((v) => getVariantPrice(v, product.price))).size > 1;
+
+  // The Related Products cards' button behaves exactly like a home grid card:
+  // a product with designs opens its own page (the customer picks a design
+  // there), and anything else goes straight into the cart with the same
+  // stock cap as the home page.
+  const handleRelatedAddToCart = (related: any) => {
+    const relatedVariants = parseVariants(related.variants, Number(related.stock) || 0);
+    if (relatedVariants.length > 0) {
+      router.push(`/products/${related.id}`);
+      return;
+    }
+
+    const stock =
+      related.stock === null || related.stock === undefined || related.stock === ""
+        ? null
+        : Number(related.stock) || 0;
+
+    if (stock === 0) {
+      alert(`${related.name} is out of stock.`);
+      return;
+    }
+
+    if (stock !== null) {
+      const inCart = items.find((i) => i.productId === related.id && !i.variant)?.quantity || 0;
+      if (inCart + 1 > stock) {
+        alert(`Only ${stock} of ${related.name} in stock.`);
+        return;
+      }
+    }
+
+    addItem({
+      productId: related.id,
+      name: related.name,
+      price: related.price,
+      quantity: 1,
+      image: related.image,
+      ...(stock !== null ? { stock } : {}),
+    });
+  };
 
   const handleAddToCart = () => {
     if (isOutOfStock) {
@@ -751,7 +791,10 @@ export default function ProductPage() {
         </div>
         </ScrollReveal>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Same density as the home grid: two columns on a phone (the old single
+            column made each card taller than the screen), three on a small
+            laptop, four on a big one. */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4 lg:gap-5">
           {/* Same ordering as the home grid: the priciest band of keychains first, so a
             shopper scanning this page sees them high to low. */}
           {sortProducts(
@@ -760,14 +803,12 @@ export default function ProductPage() {
             )
           )
             .slice(0, 6)
-            .map((relatedProduct: any, relatedIndex: number) => {
-              // Same as the home page grid: the card cycles the product's photos AND
-              // every picture of every one of its designs.
+            .map((relatedProduct: any) => {
               const relatedDesigns = parseVariants(
                 relatedProduct.variants,
                 Number(relatedProduct.stock) || 0
               );
-              const relatedDesignPictures = collectVariantPictures(relatedDesigns);
+              const hasVariants = relatedDesigns.length > 0;
               const relatedStock =
                 relatedProduct.stock === null ||
                 relatedProduct.stock === undefined ||
@@ -775,6 +816,30 @@ export default function ProductPage() {
                   ? null
                   : Number(relatedProduct.stock) || 0;
               const relatedOut = relatedStock === 0;
+              const relatedLow =
+                relatedStock !== null && relatedStock > 0 && relatedStock <= 5;
+              // Same price label as the home card: a range when the designs
+              // differ in price, a single number when they don't.
+              const designPrices = relatedDesigns
+                .map((v) => getVariantPrice(v, relatedProduct.price))
+                .filter((p) => p > 0);
+              const designPriceLabel =
+                designPrices.length === 0
+                  ? `Rs ${relatedProduct.price}`
+                  : Math.min(...designPrices) === Math.max(...designPrices)
+                    ? `Rs ${Math.min(...designPrices)}`
+                    : `Rs ${Math.min(...designPrices)} - ${Math.max(...designPrices)}`;
+              // Exactly one picture for the card, picked the same way the home
+              // grid picks it: the first frame of the product's own gallery,
+              // else its main image, else the first design picture.
+              const gallery = (relatedProduct.image_urls ||
+                relatedProduct.images ||
+                []) as string[];
+              const cardImage: string =
+                gallery.filter(Boolean)[0] ||
+                relatedProduct.image ||
+                collectVariantPictures(relatedDesigns)[0]?.image ||
+                "/placeholder.jpg";
               return (
               <Card
                 key={relatedProduct.id}
@@ -783,83 +848,75 @@ export default function ProductPage() {
                 onPointerEnter={() => router.prefetch(`/products/${relatedProduct.id}`)}
                 onPointerDown={() => router.prefetch(`/products/${relatedProduct.id}`)}
               >
-                <ProductImageCarousel
-                  images={relatedProduct.image_urls || relatedProduct.images}
-                  productImage={relatedProduct.image}
-                  productName={relatedProduct.name}
-                  variantImages={relatedDesignPictures}
-                  priority={relatedIndex < 3}
-                />
+                {/* ONE picture per card, not a carousel - exactly what the home
+                    grid does. These tiles used to mount a cycling carousel plus
+                    a strip of design chips, which is where original-size images
+                    kept sneaking back into page loads. */}
+                <div className="relative aspect-square overflow-hidden bg-muted/40">
+                  <SmartImage
+                    src={cardImage}
+                    cssWidth={240}
+                    sizes={IMAGE_SIZES.gridCard}
+                    alt={relatedProduct.name}
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                  {relatedOut && (
+                    <span className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                      Out of Stock
+                    </span>
+                  )}
+                </div>
 
-                {/* Design thumbnails, exactly like the home page grid */}
-                {relatedDesigns.some((v) => getVariantImages(v).length > 0) && (
-                  <div className="px-4 pt-3 space-y-1.5">
-                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                      Designs (
-                      {relatedDesigns.filter((v) => getVariantImages(v).length > 0).length})
-                    </p>
-                    <div className="flex gap-2 overflow-x-auto pb-0.5">
-                      {relatedDesignPictures.map((pic, picIdx) => {
-                        return (
-                          <button
-                            key={`${pic.designIndex}-${pic.pictureIndex}-${picIdx}`}
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/products/${relatedProduct.id}`);
-                            }}
-                            className="flex-shrink-0 w-10 h-10 rounded-lg overflow-hidden border border-border hover:border-accent transition-colors"
-                            title={`${pic.name}${pic.pictureCount > 1 ? ` (picture ${pic.pictureIndex} of ${pic.pictureCount})` : ""}${pic.stock <= 0 ? " (Out of stock)" : ` - ${pic.stock} left`}`}
-                          >
-                            <SmartImage
-                              src={pic.image}
-                              cssWidth={40}
-                              sizes={IMAGE_SIZES.designChip}
-                              alt={pic.name}
-                              className="w-full h-full object-cover select-none [-webkit-user-drag:none]"
-                            />
-                          </button>
-                        );
-                      })}
-                    </div>
+                {/* Product Info - compact so two cards fit side by side on a
+                    phone, same paddings and type scale as the home card. */}
+                <div className="p-2.5 sm:p-4 space-y-2 sm:space-y-3">
+                  <div>
+                    {/* A real href link, not just an onClick - keyboard focus
+                        and "open in new tab" for free; the Card onClick still
+                        handles plain taps. */}
+                    <h3 className="font-bold text-sm sm:text-base leading-snug line-clamp-2 text-foreground group-hover:text-accent touch:text-accent transition-colors">
+                      <Link
+                        href={`/products/${relatedProduct.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="focus-visible:underline"
+                      >
+                        {relatedProduct.name}
+                      </Link>
+                    </h3>
                   </div>
-                )}
 
-                <div className="p-4 space-y-4">
-                  <h3 className="font-bold text-lg text-foreground group-hover:text-accent touch:text-accent transition-colors">
-                    {relatedProduct.name}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {relatedProduct.description}
-                  </p>
+                  {/* Rating - same component and data source as the home card. */}
+                  <StarRating rating={relatedProduct.rating} reviews={relatedProduct.reviews} />
+
+                  {/* Price and Action */}
                   <div className="flex items-center justify-between pt-2 border-t border-border">
                     <div>
-                      <p className="text-2xl font-bold text-accent">
-                        {(() => {
-                          // Designs can each have their own price, so show a range.
-                          const prices = relatedDesigns
-                            .map((v) => getVariantPrice(v, relatedProduct.price))
-                            .filter((p) => p > 0);
-                          if (prices.length === 0) return `Rs ${relatedProduct.price}`;
-                          const min = Math.min(...prices);
-                          const max = Math.max(...prices);
-                          return min === max ? `Rs ${min}` : `Rs ${min} - ${max}`;
-                        })()}
+                      <p className="text-base sm:text-xl font-bold text-accent">
+                        {designPriceLabel}
                       </p>
                       <p
                         className={`text-xs font-semibold ${
                           relatedOut
                             ? "text-red-400"
-                            : relatedDesigns.length > 0
-                              ? "text-muted-foreground"
+                            : relatedLow
+                              ? "text-yellow-400"
                               : "text-green-400"
                         }`}
                       >
                         {relatedOut
                           ? "Out of Stock"
-                          : relatedDesigns.length > 0
+                          : hasVariants
                             ? `${relatedDesigns.length} designs available`
-                            : "In Stock"}
+                            : relatedLow
+                              ? `Only ${relatedStock} left!`
+                              : "In Stock"}
+                      </p>
+                      {/* A phone never hovers, so say what a tap does. Hidden on
+                          pointer devices, where the hover highlight already
+                          makes it obvious. */}
+                      <p className="hidden touch:inline-flex items-center gap-0.5 mt-1 text-xs font-semibold text-accent">
+                        View details
+                        <ChevronRight className="w-3 h-3" />
                       </p>
                     </div>
                     <Button
@@ -867,11 +924,22 @@ export default function ProductPage() {
                       disabled={relatedOut}
                       onClick={(e) => {
                         e.stopPropagation();
-                        router.push(`/products/${relatedProduct.id}`);
+                        handleRelatedAddToCart(relatedProduct);
                       }}
-                      className="bg-accent hover:bg-accent/90 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:scale-95 transition-all text-accent-foreground"
+                      className="bg-accent hover:bg-accent/90 hover:-translate-y-0.5 hover:shadow-lg active:translate-y-0 active:scale-95 transition-all text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+                      title={
+                        relatedOut
+                          ? "Out of stock"
+                          : hasVariants
+                            ? "Choose design"
+                            : "Add to cart"
+                      }
                     >
-                      <ShoppingCart className="w-4 h-4" />
+                      {hasVariants ? (
+                        <span className="text-xs font-bold px-1">Options</span>
+                      ) : (
+                        <ShoppingCart className="w-4 h-4" />
+                      )}
                     </Button>
                   </div>
                 </div>
