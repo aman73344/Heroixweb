@@ -232,9 +232,12 @@ export function StorefrontHome({
           wordmark is ALWAYS dead centre - flex justify-between cannot do that,
           because the left and right controls are different widths. */}
       <nav className="border-b border-border bg-card/50 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
           {/* Left: the "three slashes" trigger. Big enough to hit with a thumb,
-              and labelled from sm up so nobody has to guess what it opens. */}
+              and labelled at every width - a phone shows the SAME button as the
+              desktop instead of a bare icon. (The 4px gutter difference in px-3
+              vs px-4 below is invisible, but keeps a 360px phone from growing a
+              horizontal scrollbar once the full label is on screen.) */}
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
@@ -251,7 +254,7 @@ export function StorefrontHome({
               <span className="block h-[2px] w-full -skew-x-12 rounded-full bg-current transition-all duration-200 group-hover:w-5 group-hover:bg-accent" />
               <span className="block h-[2px] w-full -skew-x-12 rounded-full bg-current transition-all duration-200 group-hover:w-3 group-hover:bg-accent" />
             </span>
-            <span className="hidden sm:inline text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-accent transition-colors">
+            <span className="text-xs font-semibold uppercase tracking-wider whitespace-nowrap text-muted-foreground group-hover:text-accent transition-colors">
               Categories
             </span>
           </button>
@@ -267,13 +270,14 @@ export function StorefrontHome({
               alt="HEROIX"
               width={200}
               height={72}
-              className="h-9 sm:h-12 w-auto transition-transform duration-300 group-hover:scale-105"
+              className="h-12 w-auto transition-transform duration-300 group-hover:scale-105"
               priority
             />
-            {/* Kept from the old navbar: cycles the genres so the line under
-                the logo says something worth reading. Desktop only - on a
-                phone every pixel of height belongs to the products. */}
-            <span className="hidden sm:inline-flex items-center gap-1.5 text-xs">
+            {/* The genre line under the logo. Shown at every width so the phone
+                navbar is the same design as the desktop one; on narrow screens
+                it wraps onto a second line (same text, same style) instead of
+                pushing the nav wider than the screen. */}
+            <span className="inline-flex flex-wrap items-center justify-center gap-1.5 text-xs">
               <span className="text-muted-foreground">So much to order:</span>
               <RotatingTagline
                 words={["Anime", "Marvel", "DC", "Gaming", "Sports"]}

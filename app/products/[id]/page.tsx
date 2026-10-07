@@ -304,9 +304,9 @@ export default function ProductPage() {
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2 text-accent hover:text-accent/80">
               <ChevronLeft className="w-5 h-5" />
-              <span className="hidden sm:inline">Back</span>
+              <span>Back</span>
             </Link>
-            <div className="h-4 w-px bg-border hidden sm:block" />
+            <div className="h-4 w-px bg-border" />
             <Image
               src="/heroix-logo.png"
               alt="HEROIX"
