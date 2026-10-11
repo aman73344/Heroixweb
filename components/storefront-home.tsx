@@ -233,18 +233,18 @@ export function StorefrontHome({
           because the left and right controls are different widths. */}
       <nav className="border-b border-border bg-card/50 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 py-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-          {/* Left: the "three slashes" trigger. Big enough to hit with a thumb,
-              and labelled at every width - a phone shows the SAME button as the
-              desktop instead of a bare icon. (The 4px gutter difference in px-3
-              vs px-4 below is invisible, but keeps a 360px phone from growing a
-              horizontal scrollbar once the full label is on screen.) */}
+          {/* Left: the "three slashes" trigger. On phones it is a bare icon -
+              dropping the "Categories" text is what buys the middle line enough
+              width to stay on ONE row ("So much to order: Marvel keychains")
+              at 360px. From sm up the label returns, matching the desktop
+              design. aria-label keeps the icon announced everywhere. */}
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
             aria-label="Browse categories"
             aria-expanded={sidebarOpen}
             aria-controls="category-sidebar"
-            className="group justify-self-start inline-flex items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2 text-foreground transition-all duration-200 hover:border-accent hover:bg-accent/10 active:scale-95"
+            className="group justify-self-start inline-flex items-center gap-1.5 sm:gap-2 rounded-xl border border-border bg-card/60 px-2.5 sm:px-3 py-2 text-foreground transition-all duration-200 hover:border-accent hover:bg-accent/10 active:scale-95"
           >
             {/* Three skewed bars: reads as a hamburger everywhere, and as a
                 little mark of its own rather than a generic icon. The bars
@@ -254,7 +254,7 @@ export function StorefrontHome({
               <span className="block h-[2px] w-full -skew-x-12 rounded-full bg-current transition-all duration-200 group-hover:w-5 group-hover:bg-accent" />
               <span className="block h-[2px] w-full -skew-x-12 rounded-full bg-current transition-all duration-200 group-hover:w-3 group-hover:bg-accent" />
             </span>
-            <span className="text-xs font-semibold uppercase tracking-wider whitespace-nowrap text-muted-foreground group-hover:text-accent transition-colors">
+            <span className="hidden sm:inline text-xs font-semibold uppercase tracking-wider whitespace-nowrap text-muted-foreground group-hover:text-accent transition-colors">
               Categories
             </span>
           </button>
@@ -273,10 +273,10 @@ export function StorefrontHome({
               className="h-12 w-auto transition-transform duration-300 group-hover:scale-105"
               priority
             />
-            {/* The genre line under the logo. Shown at every width so the phone
-                navbar is the same design as the desktop one; on narrow screens
-                it wraps onto a second line (same text, same style) instead of
-                pushing the nav wider than the screen. */}
+            {/* The genre line under the logo. On phones the trigger is
+                icon-only, so this line keeps enough width to stay on ONE row;
+                if a longer word ever pushes it, flex-wrap still lets it break
+                gracefully instead of widening the navbar past the screen. */}
             <span className="inline-flex flex-wrap items-center justify-center gap-1.5 text-xs">
               <span className="text-muted-foreground">So much to order:</span>
               <RotatingTagline
