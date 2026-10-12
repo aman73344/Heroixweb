@@ -308,7 +308,7 @@ export default function ProductPage() {
             </Link>
             <div className="h-4 w-px bg-border" />
             <Image
-              src="/heroix-logo.png"
+              src="/heroix-logo.webp"
               alt="HEROIX"
               width={80}
               height={40}

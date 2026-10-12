@@ -266,7 +266,7 @@ export function StorefrontHome({
             aria-label="HEROIX home"
           >
             <Image
-              src="/heroix-logo.png"
+              src="/heroix-logo.webp"
               alt="HEROIX"
               width={200}
               height={72}

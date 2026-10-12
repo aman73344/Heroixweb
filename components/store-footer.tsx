@@ -36,7 +36,7 @@ export function StoreFooter() {
               className="inline-block transition-transform duration-300 hover:scale-105 touch:opacity-80"
             >
               <Image
-                src="/heroix-logo.png"
+                src="/heroix-logo.webp"
                 alt="HEROIX"
                 width={100}
                 height={50}
