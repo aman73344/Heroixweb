@@ -391,12 +391,14 @@ in the project, so the smaller files have to exist before they are requested.
 
 `npm run images:optimize` (`scripts/generate-image-derivatives.mjs`) walks the
 catalogue, re-encodes every picture to WebP at the widths in
-`lib/image-url.ts` (`400` and `800`), and uploads the result next to the
-original inside the same public bucket:
+`lib/image-url.ts` (`200`, `400`, `600` and `800`), and uploads the result next
+to the original inside the same public bucket:
 
 ```
 original    .../object/public/products/prod-17/1776162067135-1.jpeg   ~785 KB
+chip        .../object/public/_thumbs/products/prod-17/...@200.webp    ~18 KB
 thumbnail   .../object/public/_thumbs/products/prod-17/...@400.webp    ~62 KB
+card        .../object/public/_thumbs/products/prod-17/...@600.webp   ~150 KB
 gallery     .../object/public/_thumbs/products/prod-17/...@800.webp   ~273 KB
 ```
 

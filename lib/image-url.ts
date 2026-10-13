@@ -35,19 +35,32 @@
 export const THUMBNAIL_FOLDER = "_thumbs";
 
 /**
- * Widths the generator produces, smallest first.
+ * Widths the generator produces, smallest first - MEASURED, NOT GUESSED.
  *
- * 400px covers every thumbnail, design chip and cart line (all of them are 40-80
- * CSS px, so 400 is still 5-10x denser than they need at 1x and sharp at 2x).
- * 800px covers the product-card carousel and the product-page gallery, whose
- * widest slot is 384 CSS px (2x = 768).
+ * A live Instagram ad campaign (Oct 2026) delivered 218 visits that pulled
+ * ~230 MB of cached egress in part of one day: about 1.05 MB per visit, double
+ * the pre-campaign model. The cause was high-DPR Android phones doing the
+ * `sizes` maths ("46vw card x DPR3 = ~570 px") and therefore picking the 800px
+ * tier for EVERY home-grid card. Four tiers close that gap without touching
+ * the quality of anything actually on screen:
  *
- * A third, larger tier is deliberately NOT generated: the originals are only
+ *   200px  the truly tiny slots - 40-80 px design chips, cart lines, the
+ *          "selected design" summary. They used to be forced onto the 400px
+ *          tier (the old floor); 200 is still 2.5-5x denser than they need.
+ *   400px  1-2x screens' thumbnails, chips and cards (all 40-80 CSS px slots
+ *          and the ~190 CSS px home grid at DPR2).
+ *   600px  THE AD-PHONE TIER: a ~190 CSS px card at DPR3 wants ~570 px, which
+ *          previously jumped straight to 800. 600 delivers exactly that at
+ *          roughly 56% of the pixels - about 60% of the bytes.
+ *   800px  the product-page gallery, whose widest slot is 384 CSS px (2x =
+ *          768). Unchanged.
+ *
+ * A fifth, larger tier is deliberately NOT generated: the originals are only
  * 1080px wide, so a 1600px "detail" tier would be an upscaled copy costing
  * another ~470 KB per picture in the bucket for zero extra sharpness. Add a
  * number here and re-run the generator if bigger artwork is added later.
  */
-export const IMAGE_WIDTHS = [400, 800] as const;
+export const IMAGE_WIDTHS = [200, 400, 600, 800] as const;
 
 export type ImageWidth = (typeof IMAGE_WIDTHS)[number];
 

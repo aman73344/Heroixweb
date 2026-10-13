@@ -69,32 +69,41 @@ const check = (label, actual, expected) => {
   );
 };
 
-// 1. Nothing missing: both tiers offered, and the slot picks the dense one.
+// 1. Nothing missing: every tier offered, and each slot picks the smallest
+//    tier that still covers its 2x target (40px chip -> 200, ~190px DPR2 card
+//    maths -> 400, 384px gallery slot at 2x -> 800).
 resetMissingDerivatives();
-check('availableWidths with nothing missing', availableWidths(SRC), [400, 800]);
-check('srcset offers both tiers', imageSrcSet(SRC), `${at(400)} 400w, ${at(800)} 800w`);
+check('availableWidths with nothing missing', availableWidths(SRC), [200, 400, 600, 800]);
+check(
+  'srcset offers every tier',
+  imageSrcSet(SRC),
+  `${at(200)} 200w, ${at(400)} 400w, ${at(600)} 600w, ${at(800)} 800w`,
+);
 check('a 384px slot picks the 800px tier', imageUrl(SRC, 384), at(800));
-check('a 40px slot picks the 400px tier', imageUrl(SRC, 40), at(400));
-check('preview is the 400px file', previewUrl(SRC), at(400));
+check('a 190px slot (home card maths) picks 400', imageUrl(SRC, 190), at(400));
+check('a 40px slot picks the 200px tier', imageUrl(SRC, 40), at(200));
+check('preview defaults to the 200px file', previewUrl(SRC), at(200));
+check('the gallery pins its preview to 400px', previewUrl(SRC, 400), at(400));
 
-// 2. THE REGRESSION THIS FIXES: the 800px tier is missing, the 400px is not.
+// 2. THE REGRESSION THIS FIXES: the 800px tier is missing, the rest are not.
 noteMissingDerivative(SRC, 800);
-check('surviving widths after 800px fails', availableWidths(SRC), [400]);
-check('srcset drops the missing 800px', imageSrcSet(SRC), `${at(400)} 400w`);
-check('NO original is requested for a 384px slot', imageUrl(SRC, 384), at(400));
-check('preview still available', previewUrl(SRC), at(400));
+check('surviving widths after 800px fails', availableWidths(SRC), [200, 400, 600]);
+check('srcset drops the missing 800px', imageSrcSet(SRC), `${at(200)} 200w, ${at(400)} 400w, ${at(600)} 600w`);
+check('NO original is requested for a 384px slot - 600 covers it', imageUrl(SRC, 384), at(600));
+check('preview still available', previewUrl(SRC), at(200));
 
-// 3. The reverse: 400px missing, 800px fine. The gallery still has its picture.
+// 3. The reverse: 400px missing, the others fine. The gallery still has its
+//    picture, and only the pinned 400px preview is lost - not the frame.
 resetMissingDerivatives();
 noteMissingDerivative(SRC, 400);
-check('surviving widths after 400px fails', availableWidths(SRC), [800]);
+check('surviving widths after 400px fails', availableWidths(SRC), [200, 600, 800]);
 check('a 384px slot still gets the 800px', imageUrl(SRC, 384), at(800));
-check('preview is null (no 400px) but the page is not empty', previewUrl(SRC), null);
+check('the 200px default preview survives', previewUrl(SRC), at(200));
+check('the pinned 400px preview is null but the page is not empty', previewUrl(SRC, 400), null);
 
 // 4. Only when EVERY tier is gone does the original become the answer.
 resetMissingDerivatives();
-noteMissingDerivative(SRC, 400);
-noteMissingDerivative(SRC, 800);
+for (const w of [200, 400, 600, 800]) noteMissingDerivative(SRC, w);
 check('no widths left', availableWidths(SRC), []);
 check('falls back to the original as a last resort', imageUrl(SRC, 384), original);
 check('srcset is empty so the original is used', imageSrcSet(SRC), '');
@@ -109,7 +118,9 @@ check('unattributed failure uses the original', imageUrl(SRC, 384), original);
 // 6. Blaming a tier: which candidate did the browser actually fail on?
 resetMissingDerivatives();
 check('800px candidate blames the 800 tier', derivativeWidthFromUrl(SRC, at(800)), 800);
+check('600px candidate blames the 600 tier', derivativeWidthFromUrl(SRC, at(600)), 600);
 check('400px candidate blames the 400 tier', derivativeWidthFromUrl(SRC, at(400)), 400);
+check('200px candidate blames the 200 tier', derivativeWidthFromUrl(SRC, at(200)), 200);
 check('the original blames no tier', derivativeWidthFromUrl(SRC, original), null);
 check('an empty currentSrc blames no tier', derivativeWidthFromUrl(SRC, ''), null);
 check('a query string does not confuse it', derivativeWidthFromUrl(SRC, `${at(800)}?v=2`), 800);
@@ -119,11 +130,11 @@ check('an unrelated url blames no tier', derivativeWidthFromUrl(SRC, `${ORIGIN}/
 resetMissingDerivatives();
 const OTHER = `${ORIGIN}/prod-2/9999-1.jpeg`;
 noteMissingDerivative(SRC, 800);
-check('a different picture is unaffected', availableWidths(OTHER), [400, 800]);
+check('a different picture is unaffected', availableWidths(OTHER), [200, 400, 600, 800]);
 check(
-  'and still gets both tiers',
+  'and still gets every tier',
   imageSrcSet(OTHER),
-  `${ORIGIN}/_thumbs/prod-2/9999-1.jpeg@400.webp 400w, ${ORIGIN}/_thumbs/prod-2/9999-1.jpeg@800.webp 800w`,
+  `${ORIGIN}/_thumbs/prod-2/9999-1.jpeg@200.webp 200w, ${ORIGIN}/_thumbs/prod-2/9999-1.jpeg@400.webp 400w, ${ORIGIN}/_thumbs/prod-2/9999-1.jpeg@600.webp 600w, ${ORIGIN}/_thumbs/prod-2/9999-1.jpeg@800.webp 800w`,
 );
 
 // 8. Non-Storage pictures are untouched by any of this.

@@ -94,7 +94,10 @@ export function ProductGallery({
   const activeSrc = images[safeIndex];
   // The instant cheap version of the visible picture, when one exists. Painted
   // underneath the real one so the frame is never empty while it downloads.
-  const activePreview = previewUrl(activeSrc);
+  // Pinned to 400 on purpose: the library default is the SMALLEST tier (200,
+  // right for a 40px chip), but this preview is stretched under a ~384 px
+  // gallery frame, where 200 would read as a blurry blob during the fade-in.
+  const activePreview = previewUrl(activeSrc, 400);
   // A spinner is only honest when there is nothing left to show but the original.
   // `previewUrl` also returns null merely because the 400px tier is missing, and in
   // that case a perfectly good 800px is on its way - a spinner there would flash in
