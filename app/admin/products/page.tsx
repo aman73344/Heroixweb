@@ -352,19 +352,26 @@ export default function ProductsPage() {
 
       if (url) {
         // Add the picture to this design, keeping the ones already there.
-        const parsed = parseVariants(form.variants, form.stock);
-        if (parsed[variantIndex]) {
-          parsed[variantIndex].images = normalizeVariantImages([
-            ...getVariantImages(parsed[variantIndex]),
+        //
+        // Read and write through the functional updater (prev.variants), NOT the
+        // `form` closure variable. Uploading several files at once loops through
+        // this function inside one event handler, and `form` is a const from the
+        // current render - it never changes between iterations. Reading it
+        // directly handed every call the SAME stale text, so each new picture
+        // overwrote the previous one and a multi-file upload collapsed down to
+        // just the last file. `prev.variants` is always the latest, so a batch
+        // now accumulates every picture.
+        setForm((prev) => {
+          const parsed = parseVariants(prev.variants, prev.stock);
+          const variant = parsed[variantIndex];
+          if (!variant) return prev;
+          variant.images = normalizeVariantImages([
+            ...getVariantImages(variant),
             url,
           ]);
-          parsed[variantIndex].image = parsed[variantIndex].images[0];
-          const updatedVariantsText = formatVariantsForTextarea(parsed);
-          setForm((prev) => ({
-            ...prev,
-            variants: updatedVariantsText,
-          }));
-        }
+          variant.image = variant.images[0];
+          return { ...prev, variants: formatVariantsForTextarea(parsed) };
+        });
       }
     } catch (err) {
       console.error('Failed to upload variant image:', err);
