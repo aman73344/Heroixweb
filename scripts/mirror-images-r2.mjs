@@ -200,8 +200,14 @@ await Promise.all(
     while (cursor < targets.length) {
       const object = targets[cursor++];
       try {
-        report.copiedBytes += await copyOne(object);
+        // Read the returned byte count into a local FIRST, then accumulate
+        // synchronously. `x += await f()` spans an await between the read and
+        // write, so 6 concurrent workers would read the same base and clobber
+        // each other's updates (a lost-update race) - that made the live MB
+        // counter under-report even though every upload actually succeeded.
+        const bytes = await copyOne(object);
         report.copied += 1;
+        report.copiedBytes += bytes;
       } catch (error) {
         report.failed += 1;
         if (report.errors.length < 5) report.errors.push(`${object.key}: ${error.message}`);
