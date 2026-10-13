@@ -143,6 +143,32 @@ check('a local placeholder gets no srcset', imageSrcSet(NOT_STORAGE), '');
 check('a local placeholder is returned untouched', imageUrl(NOT_STORAGE, 384), NOT_STORAGE);
 check('a local placeholder has no preview', previewUrl(NOT_STORAGE), null);
 
+// 9. NEXT_PUBLIC_IMAGES_CDN_BASE moves derivative URLs to the CDN (Cloudflare
+//    R2) with the SAME keys - and the last-resort original stays on Supabase,
+//    so the site keeps showing pictures even if the CDN is misconfigured.
+//    The env var is read at module load, so a query-string re-import gets a
+//    fresh module instance to test it against (section 1-8 ran with it unset,
+//    which is also the deployed default before the CDN exists).
+// The CDN base is the bucket's public HOST root: an R2 public bucket binds the
+// bucket to the host, so the bucket name is not a path segment and the key after
+// the host is the in-bucket key the mirror uploaded (matches lib/image-url.ts).
+const CDN = 'https://pub-abc123.r2.dev';
+process.env.NEXT_PUBLIC_IMAGES_CDN_BASE = CDN;
+const cdn = await import('../lib/image-url.ts?cdn');
+delete process.env.NEXT_PUBLIC_IMAGES_CDN_BASE;
+check(
+  'srcset moves to the CDN base with identical keys',
+  cdn.imageSrcSet(SRC),
+  `${CDN}/_thumbs/prod-1/1234-1.jpeg@200.webp 200w, ${CDN}/_thumbs/prod-1/1234-1.jpeg@400.webp 400w, ${CDN}/_thumbs/prod-1/1234-1.jpeg@600.webp 600w, ${CDN}/_thumbs/prod-1/1234-1.jpeg@800.webp 800w`,
+);
+check(
+  'a gallery slot still picks the 800 tier on the CDN',
+  cdn.imageUrl(SRC, 384),
+  `${CDN}/_thumbs/prod-1/1234-1.jpeg@800.webp`,
+);
+for (const w of [200, 400, 600, 800]) cdn.noteMissingDerivative(SRC, w);
+check('the last-resort original stays on Supabase', cdn.imageUrl(SRC, 384), original);
+
 console.log(
   failures === 0
     ? '\n  All missing-derivative checks passed.\n'

@@ -10,6 +10,9 @@
     "setup-supabase": "node scripts/setup-supabase.js",
     "images:optimize": "node scripts/generate-image-derivatives.mjs",
     "images:optimize:dry": "node scripts/generate-image-derivatives.mjs --dry-run",
+    "images:mirror": "node scripts/mirror-images-r2.mjs",
+    "images:mirror:dry": "node scripts/mirror-images-r2.mjs --dry-run",
+    "images:sync": "npm run images:optimize && npm run images:mirror",
     "images:quality": "node scripts/compare-image-quality.mjs",
     "images:test-fallback": "node scripts/verify-missing-derivative.mjs",
     "test:gallery": "node scripts/verify-gallery-live.mjs",
@@ -25,6 +28,7 @@
     "verify": "npm run typecheck && npm run test:security && npm run test:stock && npm run test:order-numbers"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1150.0",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.12",
     "@radix-ui/react-alert-dialog": "1.1.15",

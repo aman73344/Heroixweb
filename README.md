@@ -406,6 +406,24 @@ The derivatives are uploaded with `cache-control: max-age=31536000`, so the
 browser and the CDN stop re-asking for them. Nothing is deleted and no original
 is modified - removing the `_thumbs/` folder reverts the whole optimisation.
 
+### Optional: serve images from Cloudflare R2 (zero egress)
+
+`scripts/mirror-images-r2.mjs` copies the bucket object-for-object (identical
+keys) to a Cloudflare R2 bucket. Setting `NEXT_PUBLIC_IMAGES_CDN_BASE` to the
+bucket's public root — e.g. `https://pub-xxxxxxxx.r2.dev` (an R2 public bucket
+binds the bucket to the host, so there is no `/products` path segment) — then
+points every derivative URL at R2 instead of Supabase. R2's free tier is
+10 GB storage + 10M reads + 1M writes per month with **no egress fees at all**,
+so ad traffic that would burn Supabase's 5 GB/month egress quota costs nothing
+there. The image plan is unchanged - same files, same 200/400/600/800 tiers,
+same srcset - and originals stay on Supabase as the last-resort fallback, so
+the site keeps working even if the CDN is ever misconfigured. Until the env
+var is set, every URL keeps today's Supabase behaviour.
+
+- `npm run images:mirror:dry` - inventory only, works without R2 credentials
+- `npm run images:mirror` - idempotent copy (re-run anytime; skips what exists)
+- `npm run images:sync` - regenerate thumbnails, then mirror to R2
+
 ### Which pictures may be downloaded
 
 | Where | What is downloaded |

@@ -151,13 +151,43 @@ export function derivativePath(objectKey: string, width: number): string {
 }
 
 /**
+ * Optional CDN in front of the derivative files (Cloudflare R2).
+ *
+ * The bucket keys never change - only the HOST the browser is pointed at.
+ * Set NEXT_PUBLIC_IMAGES_CDN_BASE to the CDN's public root, e.g.
+ * `https://pub-xxxxxxxx.r2.dev` (or a custom domain like
+ * `https://img.example.com`). An R2 public bucket binds the WHOLE bucket to that
+ * host, so the bucket name is NOT a path segment - the key after the host is
+ * exactly the in-bucket key the mirror uploaded (`_thumbs/prod-.../<f>@<w>.webp`).
+ * Every derivative URL is built from the CDN base + that key instead of Supabase.
+ * R2's free tier has NO egress fees (10 GB storage / 10M reads / 1M writes per
+ * month), so
+ * image delivery stops counting against Supabase's 5 GB egress quota while
+ * the image plan itself - same files, same tiers, same srcset - is untouched.
+ *
+ * The ORIGINALS deliberately stay on Supabase: they are only ever loaded as
+ * the last-resort fallback when every derivative tier is missing, and keeping
+ * them there means the site still shows pictures even if the CDN is
+ * misconfigured or a mirror is incomplete.
+ *
+ * Empty/unset = today's behaviour exactly, so deploying this change before
+ * the CDN exists is a no-op.
+ */
+const CDN_BASE = (process.env.NEXT_PUBLIC_IMAGES_CDN_BASE || "").replace(/\/+$/, "");
+
+/**
  * The derivative URL for `src` at `width`, or null when no derivative applies
  * (not a Storage object, or already a derivative).
  */
 export function derivativeUrl(src: string | null | undefined, width: number): string | null {
   const object = parseStorageObject(src);
   if (!object) return null;
-  return `${object.base}/${object.bucket}/${derivativePath(object.key, width)}`;
+  // The in-bucket derivative key is identical on both sides; only the host differs.
+  const key = derivativePath(object.key, width);
+  // On the CDN the bucket is bound to the host, so the key follows the base
+  // directly (no bucket segment). On Supabase the bucket IS a path segment.
+  if (CDN_BASE) return `${CDN_BASE}/${key}`;
+  return `${object.base}/${object.bucket}/${key}`;
 }
 
 /**
