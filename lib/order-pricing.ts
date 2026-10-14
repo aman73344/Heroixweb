@@ -13,7 +13,7 @@
 
 import { adminSupabase } from './supabase-admin';
 import { parseVariants, getVariantPrice, ProductVariant } from './variants';
-import { defaultStoreConfig } from './store-config';
+import { defaultStoreConfig, deliveryCostFor } from './store-config';
 
 export const SHIPPING_COST = defaultStoreConfig.shipping.baseCost;
 
@@ -166,11 +166,15 @@ export async function priceOrderFromDatabase(
   }
 
   const subtotal = priced.reduce((sum, i) => sum + i.lineTotal, 0);
-  const shipping = SHIPPING_COST;
+  const itemCount = priced.reduce((sum, i) => sum + i.quantity, 0);
+  // Free-delivery offer: 3+ keychains => Rs 0 delivery, otherwise the base cost.
+  // This is the AUTHORITATIVE total the customer is actually charged, so the
+  // checkout display and the WhatsApp confirmation must match it exactly.
+  const shipping = deliveryCostFor(itemCount);
 
   return {
     items: priced,
-    itemCount: priced.reduce((sum, i) => sum + i.quantity, 0),
+    itemCount,
     subtotal,
     shipping,
     total: subtotal + shipping,

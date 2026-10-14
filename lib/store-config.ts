@@ -171,6 +171,34 @@ export const defaultStoreConfig: StoreConfig = {
   ],
 };
 
+// ===== Free-delivery offer (order 3+ keychains) =====
+// ONE switch for the "order 3 or more, delivery is on us" promo, kept here so
+// the home-page banner, the checkout total and the authoritative server order
+// total all read the exact same rule and can never disagree.
+export const FREE_DELIVERY_MIN_ITEMS = 3;
+
+/** The standard delivery charge (before the free-delivery offer applies). */
+export const DELIVERY_BASE_COST = defaultStoreConfig.shipping.baseCost;
+
+/** Short, customer-facing headline for the offer. */
+export const FREE_DELIVERY_HEADLINE = `Order ${FREE_DELIVERY_MIN_ITEMS}+ keychains — delivery is FREE`;
+
+/**
+ * Delivery charge for a cart holding `itemCount` keychains in total.
+ * At FREE_DELIVERY_MIN_ITEMS (3) or more the charge drops to Rs 0; below that
+ * the standard base cost applies. The TOTAL quantity across every line counts,
+ * so three of the same keychain qualifies exactly like three different designs.
+ */
+export function deliveryCostFor(itemCount: number): number {
+  const count = Number(itemCount) || 0;
+  return count >= FREE_DELIVERY_MIN_ITEMS ? 0 : DELIVERY_BASE_COST;
+}
+
+/** True when a cart of `itemCount` keychains has earned free delivery. */
+export function qualifiesForFreeDelivery(itemCount: number): boolean {
+  return (Number(itemCount) || 0) >= FREE_DELIVERY_MIN_ITEMS;
+}
+
 // In-memory store config (in production, this would come from database)
 let storeConfig: StoreConfig = { ...defaultStoreConfig };
 

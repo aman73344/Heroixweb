@@ -13,6 +13,10 @@ import {
   NAYAPAY_ACCOUNT_NUMBER,
   HEROIX_WHATSAPP_DISPLAY,
   HEROIX_WHATSAPP_LINK,
+  FREE_DELIVERY_MIN_ITEMS,
+  deliveryCostFor,
+  qualifiesForFreeDelivery,
+  DELIVERY_BASE_COST,
 } from '@/lib/store-config';
 
 export default function CheckoutPage() {
@@ -29,7 +33,13 @@ export default function CheckoutPage() {
   const [orderTotal, setOrderTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
 
-  const shipping = 280;
+  // Total keychains in the cart (across every line/design).
+  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+  // Free-delivery offer: 3+ keychains => Rs 0 delivery, otherwise the base cost.
+  // Mirrors the authoritative server total in lib/order-pricing.ts exactly.
+  const shipping = deliveryCostFor(itemCount);
+  const freeDelivery = qualifiesForFreeDelivery(itemCount);
+  const itemsAwayFromFreeDelivery = Math.max(0, FREE_DELIVERY_MIN_ITEMS - itemCount);
   const grandTotal = totalPrice + shipping;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -244,6 +254,36 @@ export default function CheckoutPage() {
             {/* Order Summary */}
             <Card className="border-border p-6 space-y-4">
               <h3 className="font-bold text-foreground">Order Summary</h3>
+
+              {/* Free-delivery offer callout - roomy here on purpose: the
+                  checkout has space, and this is where a one-item shopper is
+                  most likely to add "just one more" to unlock free delivery. */}
+              <div
+                className={`rounded-lg p-3 text-sm border ${
+                  freeDelivery
+                    ? 'bg-accent/10 border-accent/40 text-foreground'
+                    : 'bg-card/50 border-border text-muted-foreground'
+                }`}
+              >
+                {freeDelivery ? (
+                  <p className="flex items-center gap-2 font-semibold text-foreground">
+                    🎉 You&apos;ve unlocked{' '}
+                    <span className="text-accent">FREE delivery!</span>
+                  </p>
+                ) : (
+                  <p>
+                    Add{' '}
+                    <span className="font-semibold text-foreground">
+                      {itemsAwayFromFreeDelivery} more keychain
+                      {itemsAwayFromFreeDelivery === 1 ? '' : 's'}
+                    </span>{' '}
+                    to get{' '}
+                    <span className="font-semibold text-accent">FREE delivery</span>{' '}
+                    (order {FREE_DELIVERY_MIN_ITEMS}+).
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-2 pb-4 border-b border-border">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
@@ -251,7 +291,16 @@ export default function CheckoutPage() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Shipping (PKR)</span>
-                  <span className="text-foreground">Rs {shipping.toLocaleString()}</span>
+                  {freeDelivery ? (
+                    <span className="text-foreground">
+                      <span className="line-through text-muted-foreground mr-2">
+                        Rs {DELIVERY_BASE_COST.toLocaleString()}
+                      </span>
+                      <span className="font-semibold text-accent">FREE</span>
+                    </span>
+                  ) : (
+                    <span className="text-foreground">Rs {shipping.toLocaleString()}</span>
+                  )}
                 </div>
               </div>
               <div className="flex justify-between items-center">

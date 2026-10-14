@@ -4,7 +4,7 @@ import { getServerProducts } from '@/lib/server-products';
 import { addOrderIdempotent, AdminOrder } from '@/lib/orders-store';
 import { reserveStock, releaseStock } from '@/lib/db';
 import { priceOrderFromDatabase } from '@/lib/order-pricing';
-import { NAYAPAY_ACCOUNT_NAME, NAYAPAY_ACCOUNT_NUMBER, HEROIX_WHATSAPP_DISPLAY } from '@/lib/store-config';
+import { NAYAPAY_ACCOUNT_NAME, NAYAPAY_ACCOUNT_NUMBER, HEROIX_WHATSAPP_DISPLAY, deliveryCostFor } from '@/lib/store-config';
 import { normalizeRating } from '@/lib/reviews';
 import { rateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 
@@ -350,20 +350,28 @@ function extractAddress(userMessage: string): string | undefined {
 
 function formatOrderSummary(
   orderState: SessionState['orderState'],
-  shipping: number = 280
 ): { text: string; subtotal: number; total: number } {
   let subtotal = 0;
   let itemsText = '';
+  let itemCount = 0;
   
   for (const item of orderState.items) {
     const itemTotal = item.price * item.quantity;
     subtotal += itemTotal;
+    itemCount += item.quantity;
     itemsText += `• ${item.product || 'Unknown'} x${item.quantity} = Rs ${itemTotal}\n`;
   }
   
+  // Free-delivery offer: 3+ keychains => Rs 0 delivery. Mirrors the checkout and
+  // the authoritative server total so the WhatsApp confirmation never disagrees.
+  const shipping = deliveryCostFor(itemCount);
+  const shippingLine = shipping === 0
+    ? '• Delivery = FREE (3+ keychains offer)\n'
+    : `• Shipping = Rs ${shipping}\n`;
+
   const total = subtotal + shipping;
   
-  const text = `📋 Order Summary:\n\n${itemsText}• Shipping = Rs ${shipping}\n• Total = Rs ${total}\n\n💳 Payment: NayaPay only\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order will NOT be confirmed without payment. Pay the advance on NayaPay and send the screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}) — once the payment is received your order is confirmed and moves forward.\n\n📍 Delivery to:\n${orderState.name || 'N/A'}\n${orderState.city || 'N/A'}\n${orderState.address || 'N/A'}\n📱 Phone: ${orderState.phone || 'N/A'}\n\nReply "yes" to confirm or "cancel" to start over.`;
+  const text = `📋 Order Summary:\n\n${itemsText}${shippingLine}• Total = Rs ${total}\n\n💳 Payment: NayaPay only\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order will NOT be confirmed without payment. Pay the advance on NayaPay and send the screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}) — once the payment is received your order is confirmed and moves forward.\n\n📍 Delivery to:\n${orderState.name || 'N/A'}\n${orderState.city || 'N/A'}\n${orderState.address || 'N/A'}\n📱 Phone: ${orderState.phone || 'N/A'}\n\nReply "yes" to confirm or "cancel" to start over.`;
   
   return { text, subtotal, total };
 }

@@ -39,9 +39,11 @@ import { StarRating } from "@/components/star-rating";
 import { RotatingTagline } from "@/components/rotating-tagline";
 import { ScrollReveal } from "@/components/scroll-reveal";
 import { StoreFooter } from "@/components/store-footer";
+import { OfferBanner } from "@/components/offer-banner";
 import { getCategoryFilterOptions } from "@/lib/categories";
 import { sortProducts, SORT_OPTIONS, DEFAULT_SORT, type SortKey } from "@/lib/sorting";
 import { normalizeRating, normalizeReviewCount, DEFAULT_RATING } from "@/lib/reviews";
+import { FREE_DELIVERY_MIN_ITEMS } from "@/lib/store-config";
 
 /**
  * How many cards the home grid renders before it asks the customer to press
@@ -228,6 +230,10 @@ export function StorefrontHome({
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Free-delivery announcement strip - visible to every visitor on load,
+          sits above the navbar, dismissible so it costs no space on return. */}
+      <OfferBanner />
+
       {/* Navigation. Three zones laid out as grid-cols-[1fr_auto_1fr] so the
           wordmark is ALWAYS dead centre - flex justify-between cannot do that,
           because the left and right controls are different widths. */}
@@ -334,8 +340,9 @@ export function StorefrontHome({
                 </h1>
                 <p className="text-xl text-muted-foreground text-balance">
                   Premium anime, superhero, Marvel, DC & sports keychains. Find
-                  your perfect character with AI-powered recommendations.
-                  Shipping Rs 280 nationwide!
+                  your perfect character with AI-powered recommendations. Order{" "}
+                  {FREE_DELIVERY_MIN_ITEMS}+ and delivery is{" "}
+                  <span className="text-accent font-semibold">FREE</span>!
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4 animate-in fade-in slide-in-from-left duration-700 delay-200">
