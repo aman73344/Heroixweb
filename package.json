@@ -12,6 +12,7 @@
     "images:optimize:dry": "node scripts/generate-image-derivatives.mjs --dry-run",
     "images:mirror": "node scripts/mirror-images-r2.mjs",
     "images:mirror:dry": "node scripts/mirror-images-r2.mjs --dry-run",
+    "images:mirror:thumbs": "node scripts/mirror-thumbs-r2.mjs",
     "images:sync": "npm run images:optimize && npm run images:mirror",
     "images:quality": "node scripts/compare-image-quality.mjs",
     "images:test-fallback": "node scripts/verify-missing-derivative.mjs",

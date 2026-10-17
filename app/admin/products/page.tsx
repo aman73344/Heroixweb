@@ -75,7 +75,7 @@ export default function ProductsPage() {
   // pointed the grid at the full-size original, and the Supabase egress quota
   // started leaking again. Generating the derivatives at upload time makes the
   // cheap path the ONLY path - permanently, with no server, no sharp and no
-  // manual step to forget.
+  // manual thumbnail-generation step to forget.
   const uploadDerivatives = async (objectKey: string, source: File): Promise<void> => {
     if (!source.type.startsWith("image/")) return;
     try {
@@ -121,7 +121,11 @@ export default function ProductsPage() {
     }
   };
 
-  const uploadImageToStorage = async (file: File, productId: string, index: number): Promise<string | null> => {
+  const uploadImageToStorage = async (
+    file: File,
+    productId: string,
+    index: number,
+  ): Promise<{ url: string | null; mirrorError?: string }> => {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${productId}/${Date.now()}-${index}.${fileExt}`;
@@ -140,7 +144,7 @@ export default function ProductsPage() {
 
       if (error) {
         console.error('Upload error:', error);
-        return null;
+        return { url: null };
       }
 
       // The other half of the permanent fix: build the WebP thumbnails right
@@ -153,10 +157,31 @@ export default function ProductsPage() {
         .from('products')
         .getPublicUrl(fileName);
 
-      return urlData.publicUrl;
+      let mirrorError: string | undefined;
+      try {
+        setUploadProgress('Mirroring thumbnails to CDN...');
+        const response = await fetch('/api/admin-products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'mirror-thumbnail',
+            imageUrl: urlData.publicUrl,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'The CDN mirror request failed.');
+        }
+      } catch (error) {
+        console.error('Thumbnail mirror failed:', error);
+        mirrorError =
+          error instanceof Error ? error.message : 'Unknown mirroring error.';
+      }
+
+      return { url: urlData.publicUrl, mirrorError };
     } catch (error) {
       console.error('Upload failed:', error);
-      return null;
+      return { url: null };
     }
   };
 
@@ -259,6 +284,7 @@ export default function ProductsPage() {
 
     const tempProductId = editingProductId || `temp-${Date.now()}`;
     const uploadedUrls: string[] = [];
+    const mirrorWarnings: string[] = [];
 
     try {
       for (let i = 0; i < filesToUpload.length; i++) {
@@ -279,10 +305,11 @@ export default function ProductsPage() {
 
         setUploadProgress(`Uploading ${i + 1}/${filesToUpload.length}...`);
 
-        const url = await uploadImageToStorage(optimizedFile, tempProductId, i);
-        if (url) {
-          uploadedUrls.push(url);
+        const upload = await uploadImageToStorage(optimizedFile, tempProductId, i);
+        if (upload.url) {
+          uploadedUrls.push(upload.url);
         }
+        if (upload.mirrorError) mirrorWarnings.push(upload.mirrorError);
       }
 
       if (uploadedUrls.length > 0) {
@@ -290,6 +317,11 @@ export default function ProductsPage() {
           ...prev,
           images: [...prev.images, ...uploadedUrls],
         }));
+      }
+      if (mirrorWarnings.length > 0) {
+        alert(
+          `Image upload succeeded, but ${mirrorWarnings.length} thumbnail mirror(s) failed. The images will still load from Supabase. Run "npm run images:mirror:thumbs" after fixing R2 configuration to retry. First error: ${mirrorWarnings[0]}`,
+        );
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -348,9 +380,10 @@ export default function ProductsPage() {
       const optimizedFile = await compressImage(file);
       const tempProductId = editingProductId || `temp-${Date.now()}`;
       // Slot 100+ keeps variant pictures separate from the product's own photos.
-      const url = await uploadImageToStorage(optimizedFile, tempProductId, 100 + variantIndex);
+      const upload = await uploadImageToStorage(optimizedFile, tempProductId, 100 + variantIndex);
 
-      if (url) {
+      if (upload.url) {
+        const uploadedUrl = upload.url;
         // Add the picture to this design, keeping the ones already there.
         //
         // Read and write through the functional updater (prev.variants), NOT the
@@ -367,11 +400,16 @@ export default function ProductsPage() {
           if (!variant) return prev;
           variant.images = normalizeVariantImages([
             ...getVariantImages(variant),
-            url,
+            uploadedUrl,
           ]);
           variant.image = variant.images[0];
           return { ...prev, variants: formatVariantsForTextarea(parsed) };
         });
+      }
+      if (upload.mirrorError) {
+        alert(
+          `Image upload succeeded, but its thumbnails could not be mirrored to R2. The image will still load from Supabase. Run "npm run images:mirror:thumbs" after fixing R2 configuration to retry. ${upload.mirrorError}`,
+        );
       }
     } catch (err) {
       console.error('Failed to upload variant image:', err);

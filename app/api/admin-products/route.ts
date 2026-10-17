@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdminApi } from '@/lib/admin-guard';
 import { normalizeRating, normalizeReviewCount } from '@/lib/reviews';
+import { mirrorImageThumbnailsToR2 } from '@/lib/r2-thumbnails';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!;
@@ -19,7 +20,19 @@ export async function POST(request: NextRequest) {
     const unauthorized = await requireAdminApi();
     if (unauthorized) return unauthorized;
 
-    const { action, product } = await request.json();
+    const { action, product, imageUrl } = await request.json();
+
+    if (action === 'mirror-thumbnail') {
+      if (typeof imageUrl !== 'string' || imageUrl.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'A valid image URL is required.' },
+          { status: 400 },
+        );
+      }
+
+      const result = await mirrorImageThumbnailsToR2(imageUrl);
+      return NextResponse.json({ success: true, ...result });
+    }
 
     if (action === 'save' && product) {
       // Variants can arrive as an array of lines (what the admin sends) or as a

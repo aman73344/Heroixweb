@@ -420,8 +420,15 @@ same srcset - and originals stay on Supabase as the last-resort fallback, so
 the site keeps working even if the CDN is ever misconfigured. Until the env
 var is set, every URL keeps today's Supabase behaviour.
 
+- Admin uploads now mirror each generated thumbnail to R2 automatically,
+  including product and design/variant images. Configure `R2_ACCOUNT_ID` (or
+  `R2_ENDPOINT`), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET`
+  in the server environment, including Vercel. Credentials stay server-side.
+  If mirroring fails, the admin upload still succeeds and reports the issue;
+  Supabase remains the fallback.
 - `npm run images:mirror:dry` - inventory only, works without R2 credentials
 - `npm run images:mirror` - idempotent copy (re-run anytime; skips what exists)
+- `npm run images:mirror:thumbs` - mirror just the `_thumbs/` derivatives
 - `npm run images:sync` - regenerate thumbnails, then mirror to R2
 
 ### Which pictures may be downloaded
