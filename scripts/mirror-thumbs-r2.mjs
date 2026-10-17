@@ -7,7 +7,7 @@
 // Supabase 404s on R2, the browser falls back to the 785 KB original, and the
 // page loads late again.
 
-import { readFileSync, appendFileSync, unlinkSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { S3Client, ListObjectsV2Command, PutObjectCommand } from '@aws-sdk/client-s3';
 
 // `--verify` mode: HEAD a handful of mirrored derivatives on the public CDN
@@ -37,18 +37,29 @@ function stripTrailing(s, ch) {
   return s;
 }
 
-// Some harnesses close the stdout pipe mid-run; ignore EPIPE everywhere.
-process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') return; throw e; });
+let stdoutUnavailable = false;
+process.stdout.on('error', (error) => {
+  if (error?.code === 'EPIPE') {
+    stdoutUnavailable = true;
+    return;
+  }
+  throw error;
+});
 
-// Log to a file as well as the console: this shell loses piped stdout when the
-// harness closes, and a progress file written synchronously survives that.
-const LOG_FILE = 'mirror_thumbs_result.txt';
 function log(msg) {
   const line = `${msg}`;
-  try { appendFileSync(LOG_FILE, `${line}\n`); } catch { /* best-effort */ }
-  // The harness can close the stdout pipe early; console.log then throws
-  // EPIPE synchronously, so it must be guarded or it kills the run.
-  try { console.log(line); } catch { /* stdout gone - file log still works */ }
+  if (stdoutUnavailable) {
+    console.error(line);
+    return;
+  }
+
+  try {
+    console.log(line);
+  } catch (error) {
+    if (error?.code !== 'EPIPE') throw error;
+    stdoutUnavailable = true;
+    console.error(line);
+  }
 }
 
 const SUPABASE_URL = stripTrailing(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '', '/');
@@ -153,8 +164,6 @@ async function copyOne(key) {
 }
 
 async function main() {
-  try { unlinkSync(LOG_FILE); } catch { /* first run */ }
-
   if (VERIFY) {
     // CDN base from the env exactly as the frontend reads it.
     const base = (process.env.NEXT_PUBLIC_IMAGES_CDN_BASE || '').replace(/\/+$/, '');
