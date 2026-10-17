@@ -46,6 +46,12 @@ badbuild.txt
 live_pages.txt
 g[0-9].txt
 
+# Mirror run logs (scripts/mirror-images-r2.mjs, scripts/mirror-thumbs-r2.mjs)
+mirror_thumbs_result.txt
+mirror_thumbs_stdout.txt
+mirror_thumbs_stderr.txt
+mirror_*.txt
+
 # Keep npm as the single source of truth: committing a second lockfile
 # (pnpm-lock.yaml / yarn.lock) makes Vercel pick a different package manager
 # than the one used locally, which silently installs a different tree.
