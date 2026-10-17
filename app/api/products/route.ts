@@ -4,6 +4,28 @@ import { adminSupabase } from '@/lib/supabase-admin';
 import { normalizeRating, normalizeReviewCount } from '@/lib/reviews';
 import { requireAdminApi } from '@/lib/admin-guard';
 import { rateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
+import sharp from 'sharp';
+import { parseStorageObject, derivativePath, IMAGE_WIDTHS } from '@/lib/image-url';
+
+const CACHE_CONTROL = '31536000';
+
+async function generateDerivatives(imageUrl: string): Promise<void> {
+  try {
+    const object = parseStorageObject(imageUrl);
+    if (!object) return;
+    const projectUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const publicUrl = `${projectUrl}/storage/v1/object/public/${object.path}`;
+    const resp = await fetch(publicUrl);
+    if (!resp.ok) return;
+    const buf = Buffer.from(await resp.arrayBuffer());
+    for (const width of IMAGE_WIDTHS) {
+      const webp = await sharp(buf).rotate().resize({ width, withoutEnlargement: true }).webp({ quality: 70, effort: 4 }).toBuffer();
+      await (adminSupabase as any).storage.from(object.bucket).upload(derivativePath(object.key, width), webp, { contentType: 'image/webp', cacheControl: CACHE_CONTROL, upsert: true });
+    }
+  } catch (error) {
+    console.error('Derivative generation failed:', imageUrl, error);
+  }
+}
 
 // GET is public: the storefront reads the catalogue through here.
 // POST mutates the catalogue, so it must never run for an anonymous caller.
@@ -57,7 +79,12 @@ export async function POST(request: NextRequest) {
     }
 
     if ((action === 'add' || action === 'update-single') && product) {
-      const firstImage = product.images?.[0] || product.image || '/placeholder.jpg';
+      const images = product.images || (product.image ? [product.image] : []);
+      // Generate WebP derivatives for every image so future products never
+      // suffer the "images load late / full-size originals" problem again.
+      await Promise.all(images.map((url: string) => generateDerivatives(url)));
+
+      const firstImage = images[0] || '/placeholder.jpg';
       const productData = {
         id: product.id,
         name: product.name,

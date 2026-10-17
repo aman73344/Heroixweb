@@ -32,6 +32,7 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState('');
   const [orderTotal, setOrderTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPaymentWarning, setShowPaymentWarning] = useState(false);
 
   // Total keychains in the cart (across every line/design).
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -49,6 +50,14 @@ export default function CheckoutPage() {
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Show the online-payment warning confirmation before placing the order.
+    // The customer must explicitly acknowledge that only NayaPay is accepted.
+    setShowPaymentWarning(true);
+  };
+
+  const handleConfirmPaymentWarning = async () => {
+    setShowPaymentWarning(false);
     setIsLoading(true);
 
     try {
@@ -164,7 +173,7 @@ export default function CheckoutPage() {
     );
   }
 
-  return (
+  return (<>
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b border-border bg-card/30 sticky top-0 z-40">
@@ -410,5 +419,70 @@ export default function CheckoutPage() {
         </div>
       </div>
     </div>
+
+    {/* Online-payment warning confirmation dialog */}
+    {showPaymentWarning && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Payment confirmation"
+      >
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/60"
+          onClick={() => setShowPaymentWarning(false)}
+        />
+        <div className="relative bg-card p-6 rounded-xl border border-border shadow-2xl w-full max-w-md mx-4">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="bg-accent/10 text-accent rounded-lg p-3">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Online Payment Required</h3>
+              <p className="text-sm text-muted-foreground">HEROIX accepts NayaPay only — no Cash on Delivery.</p>
+            </div>
+          </div>
+
+          <Card className="bg-accent/50 border-accent/30 rounded-lg p-4 mb-6">
+            <p className="text-sm text-foreground font-semibold mb-1">Send payment to:</p>
+            <p className="text-sm text-accent-foreground font-bold">
+              Account: {NAYAPAY_ACCOUNT_NUMBER}
+            </p>
+            <p className="text-sm text-foreground">
+              Account Name: {NAYAPAY_ACCOUNT_NAME}
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              After payment, we’ll contact you on WhatsApp ({HEROIX_WHATSAPP_DISPLAY}) to confirm your order.
+            </p>
+          </Card>
+
+          <p className="text-sm text-muted-foreground mb-6">
+            By clicking “Yes, Continue” you confirm you understand that your order
+            will not be processed until the NayaPay payment is received.
+          </p>
+
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowPaymentWarning(false)}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmPaymentWarning}
+              disabled={isLoading}
+              className="w-full sm:w-auto bg-accent hover:bg-accent/90 text-accent-foreground"
+            >
+              {isLoading ? 'Placing Order...' : 'Yes, Continue'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 }
