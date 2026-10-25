@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -122,7 +122,7 @@ export default function CheckoutPage() {
           <div className="text-6xl">✓</div>
           <h1 className="text-2xl font-bold text-foreground">Order Received!</h1>
           <p className="text-muted-foreground">
-            Your order has been placed. Pay the advance on NayaPay and send us the
+            Your order has been placed. Pay 50% upfront via NayaPay and send us the
             screenshot on WhatsApp — your order is confirmed once the payment is
             received.
           </p>
@@ -142,17 +142,17 @@ export default function CheckoutPage() {
               Account Name:{" "}
               <span className="text-foreground font-semibold">{NAYAPAY_ACCOUNT_NAME}</span>
             </p>
-            <p>1. Send the advance payment to the NayaPay account above.</p>
+            <p>1. Send 50% of the order total to the NayaPay account above.</p>
             <p>
               2. Send the payment screenshot on WhatsApp{" "}
               <span className="text-accent font-semibold">{HEROIX_WHATSAPP_DISPLAY}</span>.
             </p>
             <p>
-              3. Once we receive your payment we will confirm your order on
-              WhatsApp — only then does your order move forward.
+              3. Once we receive your 50% upfront payment we confirm your order on
+              WhatsApp — the remaining 50% is due after delivery.
             </p>
             <p className="text-foreground">
-              ⚠️ Without payment your order will NOT be confirmed. No Cash on
+              ⚠️               ⏳ Without the 50% upfront payment your order will not proceed. No Cash on Delivery.
               Delivery.
             </p>
           </div>
@@ -455,13 +455,15 @@ export default function CheckoutPage() {
               Account Name: {NAYAPAY_ACCOUNT_NAME}
             </p>
             <p className="text-xs text-muted-foreground mt-2">
-              After payment, we’ll contact you on WhatsApp ({HEROIX_WHATSAPP_DISPLAY}) to confirm your order.
+                            After you send the 50% upfront payment we'll contact you on WhatsApp ({HEROIX_WHATSAPP_DISPLAY}) to confirm your order.
             </p>
           </Card>
 
           <p className="text-sm text-muted-foreground mb-6">
             By clicking “Yes, Continue” you confirm you understand that your order
-            will not be processed until the NayaPay payment is received.
+                        By clicking "Yes, Continue" you confirm you understand that your order
+            will proceed once the 50% upfront NayaPay payment is received. The
+            remaining 50% is due after delivery.
           </p>
 
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
@@ -486,3 +488,4 @@ export default function CheckoutPage() {
   </>
   );
 }
+

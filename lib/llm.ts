@@ -402,7 +402,7 @@ function generateEnhancedFallbackResponse(
   }
   
   if (/payment|pay|advance|cash on delivery|cod|easypaisa|jazzcash|nayapay|sadapay|screenshot|transfer|bank/i.test(lastMessage)) {
-    return `We take payments on NayaPay only 💳 - NayaPay account number ${NAYAPAY_ACCOUNT_NUMBER} (account name ${NAYAPAY_ACCOUNT_NAME}). After you place the order we contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Your order is NOT confirmed until the payment is received - send the payment screenshot on WhatsApp and your order is confirmed and moves forward. No Cash on Delivery.`;
+    return `We take payments on NayaPay only 💳 - NayaPay account number ${NAYAPAY_ACCOUNT_NUMBER} (account name ${NAYAPAY_ACCOUNT_NAME}). After you place the order we contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Your order proceeds once the 50% upfront payment is received - send the payment screenshot on WhatsApp. The remaining 50% is due after delivery. No Cash on Delivery.`;
   }
   
   if (/recommend|suggest|best|top|popular|acha|best choice|khush|recommendation|btiye|dikhao/i.test(lastMessage)) {

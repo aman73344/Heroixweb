@@ -1,4 +1,4 @@
-// Store configuration that chatbot reads dynamically
+﻿// Store configuration that chatbot reads dynamically
 // This is editable from admin panel
 
 export interface StoreConfig {
@@ -61,7 +61,7 @@ export function getPaymentInfo(): string {
 
 // The "order will not move without payment" notice
 export function getOrderConfirmationNote(): string {
-  return `⚠️ Your order is NOT confirmed until the payment is received. We will contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}) — once your NayaPay payment is received, your order is confirmed and moves forward.`;
+  return `⚠️ Your order proceeds once the 50% upfront payment is received. Pay the advance, send the screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}), and we will confirm your order. The remaining 50% is due after delivery via NayaPay.`;
 }
 
 // Default store configuration
@@ -115,7 +115,7 @@ export const defaultStoreConfig: StoreConfig = {
     {
       id: 'faq-3',
       question: 'What payment methods do you accept?',
-      answer: `We take payments on NayaPay only (no Cash on Delivery). NayaPay account number ${NAYAPAY_ACCOUNT_NUMBER} — account name ${NAYAPAY_ACCOUNT_NAME}. After you place the order we contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Your order is NOT confirmed until the payment is received — send the payment screenshot on WhatsApp and your order is confirmed and moves forward.`,
+      answer: `We take payments on NayaPay only (no Cash on Delivery). NayaPay account number ${NAYAPAY_ACCOUNT_NUMBER} — account name ${NAYAPAY_ACCOUNT_NAME}. After you place the order we contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Your order proceeds once the 50% upfront payment is received — send the payment screenshot on WhatsApp and your order is confirmed and moves forward.`,
       category: 'payment',
       keywords: ['payment', 'pay', 'method', 'advance', 'nayapay', 'sadapay', 'online', 'transfer', 'screenshot', 'cash', 'account number', 'account name'],
     },
@@ -235,3 +235,6 @@ export function searchFAQ(query: string): FAQ | null {
     ) || null
   );
 }
+
+
+

@@ -371,7 +371,7 @@ function formatOrderSummary(
 
   const total = subtotal + shipping;
   
-  const text = `📋 Order Summary:\n\n${itemsText}${shippingLine}• Total = Rs ${total}\n\n💳 Payment: NayaPay only\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order will NOT be confirmed without payment. Pay the advance on NayaPay and send the screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}) — once the payment is received your order is confirmed and moves forward.\n\n📍 Delivery to:\n${orderState.name || 'N/A'}\n${orderState.city || 'N/A'}\n${orderState.address || 'N/A'}\n📱 Phone: ${orderState.phone || 'N/A'}\n\nReply "yes" to confirm or "cancel" to start over.`;
+  const text = `📋 Order Summary:\n\n${itemsText}${shippingLine}• Total = Rs ${total}\n\n💳 Payment: 50% upfront via NayaPay, 50% after delivery\nAccount Number: ${NAYAPAY_ACCOUNT_NUMBER}\nAccount Name: ${NAYAPAY_ACCOUNT_NAME}\n\n⚠️ Your order will proceed once the 50% upfront payment is received. Pay 50% of the order total via NayaPay and send the screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}) — once the payment is received your order is confirmed and moves forward.\n\n📍 Delivery to:\n${orderState.name || 'N/A'}\n${orderState.city || 'N/A'}\n${orderState.address || 'N/A'}\n📱 Phone: ${orderState.phone || 'N/A'}\n\nReply "yes" to confirm or "cancel" to start over.`;
   
   return { text, subtotal, total };
 }
