@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -133,7 +133,7 @@ export default function CheckoutPage() {
             <p className="text-3xl font-bold text-accent">Rs {orderTotal.toLocaleString()}</p>
           </div>
           <div className="bg-card/50 border border-border rounded-lg p-4 text-left text-sm text-muted-foreground space-y-2">
-            <p className="font-semibold text-foreground">💳 Payment: NayaPay only — order NOT confirmed yet</p>
+            <p className="font-semibold text-foreground">💳 Payment: 50% upfront via NayaPay, 50% after delivery</p>
             <p>
               NayaPay Account Number:{" "}
               <span className="text-foreground font-semibold">{NAYAPAY_ACCOUNT_NUMBER}</span>
@@ -152,8 +152,7 @@ export default function CheckoutPage() {
               WhatsApp — the remaining 50% is due after delivery.
             </p>
             <p className="text-foreground">
-              ⚠️               ⏳ Without the 50% upfront payment your order will not proceed. No Cash on Delivery.
-              Delivery.
+              ⚠️ Without the 50% upfront payment your order will not proceed. No Cash on Delivery.
             </p>
           </div>
           <Button asChild className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
@@ -391,7 +390,7 @@ export default function CheckoutPage() {
 
                 <div className="bg-card/50 border border-accent/30 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
                   <p className="font-semibold text-foreground text-sm">
-                    💳 Payment: NayaPay only ({NAYAPAY_ACCOUNT_NUMBER})
+                    💳 Payment: 50% upfront via NayaPay, 50% after delivery
                   </p>
                   <p>
                     Account Name:{" "}

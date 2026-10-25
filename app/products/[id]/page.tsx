@@ -759,9 +759,9 @@ export default function ProductPage() {
             <div className="space-y-2 text-muted-foreground">
               <p>Fast shipping: Rs 280 nationwide (delivery charge)</p>
               <p>Delivery within 5-7 business days</p>
-              <p>💳 Payment: NayaPay only — Account Number: 03084824939 (Account Name: Khawaja Aman Ali)</p>
+              <p>💳 Payment: 50% upfront via NayaPay, 50% after delivery — no Cash on Delivery.</p>
               <p className="text-foreground">
-                ⚠️ Your order is NOT confirmed without payment. After you order, we contact you on
+                ⚠️ Your order is NOT confirmed until payment. After you order, we contact you on
                 WhatsApp <a
                   href="https://wa.me/923143131716"
                   target="_blank"
