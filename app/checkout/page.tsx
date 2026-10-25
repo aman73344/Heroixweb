@@ -393,8 +393,10 @@ export default function CheckoutPage() {
                     💳 Payment: 50% upfront via NayaPay, 50% after delivery
                   </p>
                   <p>
-                    Account Name:{" "}
-                    <span className="text-foreground font-semibold">{NAYAPAY_ACCOUNT_NAME}</span>
+                    Account Number: <span className="text-foreground font-semibold">{NAYAPAY_ACCOUNT_NUMBER}</span>
+                  </p>
+                  <p>
+                    Account Name: <span className="text-foreground font-semibold">{NAYAPAY_ACCOUNT_NAME}</span>
                   </p>
                   <p>
                     ⚠️ Your order will NOT be confirmed without payment. After you
