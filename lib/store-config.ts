@@ -45,9 +45,7 @@ export interface FAQ {
 }
 
 // ===== Payment details (single source of truth) =====
-// HEROIX takes payments on NayaPay ONLY. An order is NOT confirmed until the
-// payment has actually been received - our team contacts every customer on the
-// official HEROIX WhatsApp number and confirms the order there.
+// HEROIX takes payments via NayaPay: 50% upfront, 50% after delivery.
 export const NAYAPAY_ACCOUNT_NAME = 'Khawaja Aman Ali';
 export const NAYAPAY_ACCOUNT_NUMBER = '03084824939';
 export const HEROIX_WHATSAPP_DISPLAY = '+92 314 3131716';
@@ -56,12 +54,12 @@ export const HEROIX_WHATSAPP_LINK = 'https://wa.me/923143131716';
 
 // Short one-liner used in chats/UI
 export function getPaymentInfo(): string {
-  return `💳 NayaPay only — Account Number: ${NAYAPAY_ACCOUNT_NUMBER} | Account Name: ${NAYAPAY_ACCOUNT_NAME}`;
+  return `💳 Payment: 50% upfront via NayaPay, 50% after delivery — Account Number: ${NAYAPAY_ACCOUNT_NUMBER} | Account Name: ${NAYAPAY_ACCOUNT_NAME}`;
 }
 
 // The "order will not move without payment" notice
 export function getOrderConfirmationNote(): string {
-  return `⚠️ Your order proceeds once the 50% upfront payment is received. Pay the advance, send the screenshot on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}), and we will confirm your order. The remaining 50% is due after delivery via NayaPay.`;
+  return `⚠️ Your order proceeds once the 50% upfront payment is received. Send the screenshot of your 50% upfront NayaPay payment on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}), and we will confirm your order. The remaining 50% is due after delivery via NayaPay.`;
 }
 
 // Default store configuration
@@ -115,9 +113,9 @@ export const defaultStoreConfig: StoreConfig = {
     {
       id: 'faq-3',
       question: 'What payment methods do you accept?',
-      answer: `We take payments on NayaPay only (no Cash on Delivery). NayaPay account number ${NAYAPAY_ACCOUNT_NUMBER} — account name ${NAYAPAY_ACCOUNT_NAME}. After you place the order we contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Your order proceeds once the 50% upfront payment is received — send the payment screenshot on WhatsApp and your order is confirmed and moves forward.`,
+      answer: `We accept NayaPay only (no Cash on Delivery). Your 50% upfront payment goes to account ${NAYAPAY_ACCOUNT_NUMBER} under ${NAYAPAY_ACCOUNT_NAME}. After you place the order we contact you on WhatsApp (${HEROIX_WHATSAPP_DISPLAY}). Once your 50% upfront payment is received, we confirm your order and it moves forward.`,
       category: 'payment',
-      keywords: ['payment', 'pay', 'method', 'advance', 'nayapay', 'sadapay', 'online', 'transfer', 'screenshot', 'cash', 'account number', 'account name'],
+      keywords: ['payment', 'pay', 'method', '50% upfront', '50% after delivery', 'nayapay', 'sadapay', 'online', 'transfer', 'screenshot', 'cash', 'account number', 'account name'],
     },
     {
       id: 'faq-4',
@@ -214,7 +212,7 @@ export function updateStoreConfig(config: Partial<StoreConfig>): StoreConfig {
 export function getShippingInfo(): string {
   const { baseCost, deliveryDays } = storeConfig.shipping;
   const { currencySymbol } = storeConfig.payment;
-  return `${currencySymbol} ${baseCost} delivery charge (${deliveryDays}) across Pakistan. Payment is NayaPay only (${NAYAPAY_ACCOUNT_NUMBER} - ${NAYAPAY_ACCOUNT_NAME}) - no Cash on Delivery.`;
+  return `${currencySymbol} ${baseCost} delivery charge (${deliveryDays}) across Pakistan. Payment is 50% upfront via NayaPay, 50% after delivery — no Cash on Delivery.`;
 }
 
 export function getFAQs(category?: string): FAQ[] {
