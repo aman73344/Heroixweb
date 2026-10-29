@@ -23,6 +23,7 @@ export interface AdminOrder {
   items: number;
   total: number;
   status: 'pending' | 'processing' | 'shipped' | 'delivered';
+  tracking_id?: string | null;
   items_data?: any[];
 }
 
