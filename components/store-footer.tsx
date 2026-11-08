@@ -17,7 +17,7 @@ const WHATSAPP_NUMBER = "923143131716"; // 0314-3131716 in international format
 const WHATSAPP_LABEL = "0314-3131716";
 const INSTAGRAM_URL = "https://www.instagram.com/heroix.pk/";
 const INSTAGRAM_LABEL = "@heroix.pk";
-const EMAIL = "aman723344@gmail.com";
+const EMAIL = "heroix.pk@gmail.com";
 
 // Links nudge sideways and colour up on hover, with the icon sliding a little
 // further - a small movement that reads as "this is a link" on a laptop and
