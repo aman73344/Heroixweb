@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useCart } from "@/lib/cart-context";
@@ -19,6 +19,16 @@ import {
   DELIVERY_BASE_COST,
 } from "@/lib/store-config";
 
+declare global {
+  interface Window {
+    fbq?: (
+      command: "track",
+      eventName: "Purchase",
+      parameters: { value: number; currency: "PKR" },
+    ) => void;
+  }
+}
+
 export default function CheckoutPage() {
   const { items, totalPrice, removeItem, updateQuantity, clearCart } =
     useCart();
@@ -33,6 +43,24 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState("");
   const [orderTotal, setOrderTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const purchaseTracked = useRef(false);
+
+  useEffect(() => {
+    if (!orderPlaced || orderTotal <= 0 || purchaseTracked.current) {
+      return;
+    }
+
+    if (typeof window.fbq !== "function") {
+      console.error("Meta Pixel is unavailable; Purchase event was not sent.");
+      return;
+    }
+
+    window.fbq("track", "Purchase", {
+      value: orderTotal,
+      currency: "PKR",
+    });
+    purchaseTracked.current = true;
+  }, [orderPlaced, orderTotal]);
   
 
   // Total keychains in the cart (across every line/design).
