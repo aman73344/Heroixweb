@@ -19,7 +19,7 @@
 --   So this migration is an UPGRADE in safety, not a prerequisite for
 --   correctness. The checkout is already protected without it. Applying it adds:
 --     - all-or-nothing behaviour across a multi-line order
---     - per-design (variant) stock enforcement inside the same transaction
+--     - per-design stock enforcement without decrementing the parent counter
 --
 -- ⚠️ BEFORE RUNNING: confirm the real schema (do not assume)
 --   Run the STEP 0 queries first and check the output. In particular:
@@ -98,9 +98,12 @@ BEGIN
     current_stock := COALESCE(current_stock, 0);
 
     -- Per-design enforcement when the customer chose a design.
-    IF variant_name IS NOT NULL
-       AND updated_variants IS NOT NULL
-       AND jsonb_typeof(updated_variants) = 'array' THEN
+    IF variant_name IS NOT NULL THEN
+      IF updated_variants IS NULL OR jsonb_typeof(updated_variants) <> 'array' THEN
+        RETURN jsonb_build_object('ok', false, 'failures',
+          failures || jsonb_build_array(jsonb_build_object(
+            'product_id', pid, 'requested', qty, 'available', 0)));
+      END IF;
 
       new_designs := '[]'::jsonb;
       n           := jsonb_array_length(updated_variants);
@@ -133,7 +136,7 @@ BEGIN
       updated_variants := new_designs;
     END IF;
 
-    IF current_stock < qty THEN
+    IF variant_name IS NULL AND current_stock < qty THEN
       RETURN jsonb_build_object('ok', false, 'failures',
         failures || jsonb_build_array(jsonb_build_object(
           'product_id', pid, 'requested', qty, 'available', current_stock)));
@@ -179,7 +182,6 @@ BEGIN
 
         UPDATE products
         SET variants = new_designs,
-            stock = GREATEST(stock - qty, 0),
             updated_at = now()
         WHERE id = pid;
       ELSE

@@ -432,9 +432,7 @@ export async function verifyStockAvailability(
   return problems;
 }
 
-// Real stock counter: reduce stock after an order is saved (never below 0).
-// If a variant is specified, decrements that variant's stock count as well
-// as the product's overall stock count.
+// Legacy stock counter: decrement only the selected design's counter.
 export async function decrementStock(
   productId: string,
   quantity: number,
@@ -457,30 +455,26 @@ export async function decrementStock(
     }
 
     const currentBase = Number(data.stock) || 0;
-    const nextBase = Math.max(0, currentBase - quantity);
     const updatePayload: Record<string, any> = {
-      stock: nextBase,
       updated_at: new Date().toISOString(),
     };
 
-    // If product has variants and a variant was purchased, update variant stock.
-    // parseVariants/formatVariantsForStorage are used so the design's picture AND
-    // description are preserved while only the stock number changes.
-    if (variantName && data.variants && Array.isArray(data.variants) && data.variants.length > 0) {
+    if (variantName) {
       const parsedVariants = parseVariants(data.variants, currentBase);
-      let stockChanged = false;
-
-      const updatedVariants = parsedVariants.map((v) => {
-        if (v.name.toLowerCase() === variantName.trim().toLowerCase()) {
-          stockChanged = true;
-          return { ...v, stock: Math.max(0, v.stock - quantity) };
-        }
-        return v;
-      });
-
-      if (stockChanged) {
-        updatePayload.variants = formatVariantsForStorage(updatedVariants);
+      const variantIndex = parsedVariants.findIndex(
+        (variant) => variant.name.trim().toLowerCase() === variantName.trim().toLowerCase(),
+      );
+      if (variantIndex < 0) {
+        console.error('Stock decrement could not find variant:', productId, variantName);
+        return;
       }
+      parsedVariants[variantIndex] = {
+        ...parsedVariants[variantIndex],
+        stock: Math.max(0, parsedVariants[variantIndex].stock - quantity),
+      };
+      updatePayload.variants = formatVariantsForStorage(parsedVariants);
+    } else {
+      updatePayload.stock = Math.max(0, currentBase - quantity);
     }
 
     const { error: updateError } = await (adminSupabase as any)
@@ -571,6 +565,11 @@ function toReservationLine(line: CleanLine): ReservationLine {
   };
 }
 
+function nextStockUpdateTime(value: unknown): string {
+  const previous = value ? new Date(String(value)).getTime() : 0;
+  return new Date(Math.max(Date.now(), previous + 1)).toISOString();
+}
+
 /**
  * Restores the given lines and returns the ones it could NOT put back.
  *
@@ -605,7 +604,7 @@ async function restoreLines(
     for (let attempt = 0; attempt < 5 && !settled; attempt++) {
       const { data: current, error: readError } = await (client as any)
         .from('products')
-        .select('stock')
+        .select('stock, variants, updated_at')
         .eq('id', line.productId)
         .maybeSingle();
 
@@ -614,17 +613,47 @@ async function restoreLines(
         break;
       }
 
-      const currentStock = Number(current.stock) || 0;
+      let updated: any;
+      let writeError: any;
 
-      const { data: updated, error: writeError } = await (client as any)
-        .from('products')
-        .update({
-          stock: currentStock + line.quantity,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', line.productId)
-        .eq('stock', current.stock)
-        .select('stock');
+      if (line.variant) {
+        const variants = parseVariants(current.variants, Number(current.stock) || 0);
+        const variantIndex = variants.findIndex(
+          (variant) => variant.name.trim().toLowerCase() === line.variant!.trim().toLowerCase(),
+        );
+        if (variantIndex < 0) {
+          console.error('Stock restore could not find variant:', line.productId, line.variant);
+          break;
+        }
+
+        variants[variantIndex] = {
+          ...variants[variantIndex],
+          stock: variants[variantIndex].stock + line.quantity,
+        };
+        let query = (client as any).from('products')
+          .update({
+            variants: formatVariantsForStorage(variants),
+            updated_at: nextStockUpdateTime(current.updated_at),
+          })
+          .eq('id', line.productId);
+        query = current.updated_at == null
+          ? query.is('updated_at', null)
+          : query.eq('updated_at', current.updated_at);
+        ({ data: updated, error: writeError } = await query.select('stock'));
+      } else {
+        const currentStock = Number(current.stock) || 0;
+        let query = (client as any).from('products')
+          .update({
+            stock: currentStock + line.quantity,
+            updated_at: nextStockUpdateTime(current.updated_at),
+          })
+          .eq('id', line.productId)
+          .eq('stock', current.stock);
+        query = current.updated_at == null
+          ? query.is('updated_at', null)
+          : query.eq('updated_at', current.updated_at);
+        ({ data: updated, error: writeError } = await query.select('stock'));
+      }
 
       if (writeError) {
         console.error('Stock restore write error:', line.productId, writeError);
@@ -724,17 +753,16 @@ export async function reserveStock(
     if (error?.code !== '42883' && error?.code !== 'PGRST202') throw error;
   }
 
-  // Fallback: compare-and-swap on the current stock value.
+  // Fallback: compare-and-swap on the stock counter being changed.
   //
-  // PostgREST cannot express "stock = stock - q", so this reads the current
-  // value and writes back a new one ONLY if the value has not changed:
+  // PostgREST cannot express "stock = stock - q" or update one element of the
+  // variants array. Main-stock writes guard the stock value; variant writes
+  // guard updated_at as a row-version token.
   //
-  //     UPDATE products SET stock = <new> WHERE id = p AND stock = <current>
+  //     UPDATE products SET variants = <new> WHERE id = p AND updated_at = <current>
   //
-  // That WHERE clause is the guard. If a competing order changed the stock in
-  // between the read and the write, this matches zero rows, so we retry with the
-  // fresh value. It is the same optimistic-concurrency pattern as a compare and
-  // swap, and it closes the oversell window without needing a migration.
+  // If a competing order changed the same counter after the read, the update
+  // matches zero rows and we retry using the fresh values.
   const failures: ReservationFailure[] = [];
 
   for (const line of clean) {
@@ -743,7 +771,7 @@ export async function reserveStock(
     for (let attempt = 0; attempt < 5 && !settled; attempt++) {
       const { data: current, error: readError } = await (client as any)
         .from('products')
-        .select('stock')
+        .select('stock, variants, updated_at')
         .eq('id', line.product_id)
         .maybeSingle();
 
@@ -755,74 +783,58 @@ export async function reserveStock(
         break;
       }
 
-      const available = Number(current.stock) || 0;
-      if (available < line.quantity) {
-        failures.push({
-          productId: line.product_id,
-          requested: line.quantity,
-          available,
-        });
-        settled = true;
-        break;
-      }
+      let updatePayload: Record<string, unknown>;
+      let available: number;
 
-      // Determine stock to decrement: variant stock or main product stock
-      let stockToDecrement = available - line.quantity;
-      let updateFilter = { id: line.product_id, stock: current.stock };
-      
-      if (line.variant) {
-        // Decrement specific variant's stock
+      if (line.variant_name) {
         const parsedVariants = parseVariants(current.variants, current.stock ?? 0);
         const variantIndex = parsedVariants.findIndex(
-          (v: any) => v.name.toLowerCase() === line.variant.toLowerCase()
+          (variant) => variant.name.trim().toLowerCase() === line.variant_name!.trim().toLowerCase(),
         );
-        if (variantIndex >= 0) {
-          const variantStock = Number(parsedVariants[variantIndex].stock) || 0;
-          if (variantStock < line.quantity) {
-            // Can't decrement below zero - fall back to main stock
-            stockToDecrement = available - line.quantity;
-            updateFilter = { id: line.product_id, stock: current.stock };
-          } else {
-            stockToDecrement = variantStock - line.quantity;
-            // Update the specific variant in the variants array
-            parsedVariants[variantIndex].stock = stockToDecrement;
-            const variantsForStorage = formatVariantsForStorage(parsedVariants);
-            updateFilter = {
-              id: line.product_id,
-              variants: variantsForStorage,
-              stock: current.stock, // Keep main stock unchanged
-            };
-          }
-        } else {
-          // Variant not found - decrement main stock
-          stockToDecrement = available - line.quantity;
+        if (variantIndex < 0) {
+          failures.push({ productId: line.product_id, requested: line.quantity, available: 0 });
+          settled = true;
+          break;
         }
-      }
-      
-      // Build the update payload based on whether we're decrementing variant or main stock
-      const updatePayload: any = {
-        updated_at: new Date().toISOString(),
-      };
-      
-      if (line.variant) {
-        // We already handled the variant stock decrement above and set updateFilter
-        // Apply the variants update if needed
-        if (updateFilter.variants) {
-          updatePayload.variants = updateFilter.variants;
-          // When updating variants, don't update main stock via the .eq('stock') guard
-          // since we want to keep main stock unchanged
+
+        available = Number(parsedVariants[variantIndex].stock) || 0;
+        if (available < line.quantity) {
+          failures.push({ productId: line.product_id, requested: line.quantity, available });
+          settled = true;
+          break;
         }
+
+        parsedVariants[variantIndex] = {
+          ...parsedVariants[variantIndex],
+          stock: available - line.quantity,
+        };
+        updatePayload = {
+          variants: formatVariantsForStorage(parsedVariants),
+          updated_at: nextStockUpdateTime(current.updated_at),
+        };
       } else {
-        // Decrement main product stock
-        updatePayload.stock = stockToDecrement;
+        available = Number(current.stock) || 0;
+        if (available < line.quantity) {
+          failures.push({ productId: line.product_id, requested: line.quantity, available });
+          settled = true;
+          break;
+        }
+        updatePayload = {
+          stock: available - line.quantity,
+          updated_at: nextStockUpdateTime(current.updated_at),
+        };
       }
-      
-      const { data: updated, error: writeError } = await (client as any)
-        .from('products')
+      let query = (client as any).from('products')
         .update(updatePayload)
-        .eq('id', line.product_id)
-        .eq('stock', current.stock)
-        .select('stock');
+        .eq('id', line.product_id);
+      if (line.variant_name) {
+        query = current.updated_at == null
+          ? query.is('updated_at', null)
+          : query.eq('updated_at', current.updated_at);
+      } else {
+        query = query.eq('stock', current.stock);
+      }
+      const { data: updated, error: writeError } = await query.select('stock');
 
       if (writeError) {
         console.error('Stock reservation write error:', writeError);

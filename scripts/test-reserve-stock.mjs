@@ -72,13 +72,20 @@ process.on('exit', () => rmSync(outDir, { recursive: true, force: true }));
 // compare-and-swap fallback - the path the rollback lives on.
 // ---------------------------------------------------------------------------
 function makeClient(stocks, opts = {}) {
-  const rows = new Map(Object.entries(stocks).map(([id, s]) => [id, { id, stock: s }]));
+  const rows = new Map(Object.entries(stocks).map(([id, value]) => [
+    id,
+    typeof value === 'number'
+      ? { id, stock: value, variants: [], updated_at: null }
+      : { id, updated_at: null, ...value },
+  ]));
   const log = [];
 
   /** A filter node; every method returns a new node sharing the same rows. */
   const node = (filters, pending) => {
     const find = () =>
-      [...rows.values()].find((r) => filters.every(([c, v]) => String(r[c]) === String(v)));
+      [...rows.values()].find((r) => filters.every(([c, v]) =>
+        v === null ? r[c] == null : String(r[c]) === String(v),
+      ));
 
     // `pending` holds an update payload across the chain, so the real
     // `.update({...}).eq('id', p).eq('stock', s).select('stock')` order works
@@ -86,6 +93,7 @@ function makeClient(stocks, opts = {}) {
     const api = {
       select: () => api,
       eq: (col, val) => node([...filters, [col, val]], pending),
+      is: (col, val) => node([...filters, [col, val]], pending),
       maybeSingle: async () => {
         if (opts.readError) return { data: null, error: opts.readError };
         const hit = find();
@@ -114,6 +122,7 @@ function makeClient(stocks, opts = {}) {
   return {
     log,
     stock: (id) => rows.get(id)?.stock,
+    variants: (id) => rows.get(id)?.variants,
     from: (table) => {
       if (table !== 'products') throw new Error(`unexpected table: ${table}`);
       return node([]);
@@ -193,14 +202,81 @@ const L = (productId, quantity, variant) => ({ productId, quantity, variant });
 
 // --- 7. The design name survives into `reserved` and through the release ------
 {
-  const c = makeClient({ a: 10 });
-  const r = await reserveStock([L('a', 1, 'Red')], { client: c });
-  check('variant preserved in reserved', r.reserved[0]?.variant === 'Red', JSON.stringify(r.reserved[0]));
+  const c = makeClient({
+    a: { stock: 10, variants: ['Silver: 3', 'Copper: 4'] },
+  });
+  const r = await reserveStock([L('a', 2, 'Copper')], { client: c });
+  check('variant preserved in reserved', r.reserved[0]?.variant === 'Copper', JSON.stringify(r.reserved[0]));
+  check(
+    'variant reservation changes only selected design stock',
+    c.stock('a') === 10 && c.variants('a').join(', ') === 'Silver: 3, Copper: 2',
+    `parent=${c.stock('a')} variants=${c.variants('a')}`,
+  );
   await releaseStock(r.reserved, { client: c });
-  check('variant line fully restored', c.stock('a') === 10, `stock=${c.stock('a')}`);
+  check(
+    'variant line fully restored',
+    c.stock('a') === 10 && c.variants('a').join(', ') === 'Silver: 3, Copper: 4',
+    `parent=${c.stock('a')} variants=${c.variants('a')}`,
+  );
 }
 
-// --- 8. A read error fails closed and holds nothing --------------------------
+// --- 8. Variant holds roll back when a later line cannot be reserved ----------
+{
+  const c = makeClient({
+    a: { stock: 10, variants: ['Copper: 2'] },
+    b: 0,
+  });
+  const r = await reserveStock([L('a', 1, 'Copper'), L('b', 1)], { client: c });
+  check(
+    'failed mixed order restores variant stock only',
+    !r.ok && c.stock('a') === 10 && c.variants('a').join(', ') === 'Copper: 2',
+    `parent=${c.stock('a')} variants=${c.variants('a')}`,
+  );
+}
+
+// --- 9. Two selected designs draw from their own independent counters ----------
+{
+  const c = makeClient({
+    a: { stock: 10, variants: ['Silver: 3', 'Copper: 4'] },
+  });
+  const r = await reserveStock([L('a', 1, 'Silver'), L('a', 1, 'Copper')], { client: c });
+  check(
+    'both selected designs decrement their own counters',
+    r.ok && c.stock('a') === 10 && c.variants('a').join(', ') === 'Silver: 2, Copper: 3',
+    `parent=${c.stock('a')} variants=${c.variants('a')}`,
+  );
+}
+
+// --- 10. Concurrent purchases cannot oversell one variant --------------------
+{
+  const c = makeClient({
+    a: { stock: 10, variants: ['Copper: 1'] },
+  });
+  const results = await Promise.all([
+    reserveStock([L('a', 1, 'Copper')], { client: c }),
+    reserveStock([L('a', 1, 'Copper')], { client: c }),
+  ]);
+  check(
+    'variant compare-and-swap permits only one last-unit reservation',
+    results.filter((result) => result.ok).length === 1 && c.variants('a').join(', ') === 'Copper: 0',
+    `successes=${results.filter((result) => result.ok).length} variants=${c.variants('a')}`,
+  );
+}
+
+// --- 11. Missing or exhausted variants never consume parent stock ------------
+{
+  const c = makeClient({
+    a: { stock: 10, variants: ['Copper: 0'] },
+  });
+  const r = await reserveStock([L('a', 1, 'Copper')], { client: c });
+  check('out-of-stock variant reservation fails', !r.ok && r.failures[0].available === 0);
+  check(
+    'out-of-stock variant does not fall back to parent stock',
+    c.stock('a') === 10 && c.variants('a').join(', ') === 'Copper: 0',
+  );
+}
+
+// --- 12. A read error fails closed and holds nothing -------------------------
 {
   const c = makeClient({ a: 10, b: 10 }, { readError: { message: 'connection reset' } });
   const r = await reserveStock([L('a', 2), L('b', 2)], { client: c });
@@ -208,7 +284,7 @@ const L = (productId, quantity, variant) => ({ productId, quantity, variant });
   check('read error leaves no stock held', r.reserved.length === 0);
 }
 
-// --- 9. A write error fails closed --------------------------------------------
+// --- 13. A write error fails closed -------------------------------------------
 {
   const c = makeClient({ a: 10 }, { writeError: { message: 'deadlock detected' } });
   const r = await reserveStock([L('a', 2)], { client: c });
@@ -216,14 +292,14 @@ const L = (productId, quantity, variant) => ({ productId, quantity, variant });
   check('write error reports no hold', r.reserved.length === 0);
 }
 
-// --- 10. Empty / zero-quantity input is a no-op success -----------------------
+// --- 14. Empty / zero-quantity input is a no-op success -----------------------
 {
   const c = makeClient({ a: 10 });
   const r = await reserveStock([L('', 3), L('a', 0)], { client: c });
   check('empty input is an ok no-op', r.ok && r.reserved.length === 0 && c.stock('a') === 10);
 }
 
-// --- 11. No order row is created when the reservation fails ------------------
+// --- 15. No order row is created when the reservation fails ------------------
 // The fake client throws on any table other than `products`, so reaching for
 // `orders` at all would fail this case.
 {
@@ -232,7 +308,7 @@ const L = (productId, quantity, variant) => ({ productId, quantity, variant });
   check('failed reservation never writes an order', !r.ok && c.log.every((e) => e.op !== 'rpc' || e.name === 'reserve_stock'));
 }
 
-// --- 12. releaseStock ignores empty/zero lines instead of crediting them -----
+// --- 16. releaseStock ignores empty/zero lines instead of crediting them ------
 {
   const c = makeClient({ a: 7 });
   await releaseStock([L('', 5), L('a', 0), L('a', 2)], { client: c });
