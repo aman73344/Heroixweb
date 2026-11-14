@@ -766,12 +766,60 @@ export async function reserveStock(
         break;
       }
 
+      // Determine stock to decrement: variant stock or main product stock
+      let stockToDecrement = available - line.quantity;
+      let updateFilter = { id: line.product_id, stock: current.stock };
+      
+      if (line.variant) {
+        // Decrement specific variant's stock
+        const parsedVariants = parseVariants(current.variants, current.stock ?? 0);
+        const variantIndex = parsedVariants.findIndex(
+          (v: any) => v.name.toLowerCase() === line.variant.toLowerCase()
+        );
+        if (variantIndex >= 0) {
+          const variantStock = Number(parsedVariants[variantIndex].stock) || 0;
+          if (variantStock < line.quantity) {
+            // Can't decrement below zero - fall back to main stock
+            stockToDecrement = available - line.quantity;
+            updateFilter = { id: line.product_id, stock: current.stock };
+          } else {
+            stockToDecrement = variantStock - line.quantity;
+            // Update the specific variant in the variants array
+            parsedVariants[variantIndex].stock = stockToDecrement;
+            const variantsForStorage = formatVariantsForStorage(parsedVariants);
+            updateFilter = {
+              id: line.product_id,
+              variants: variantsForStorage,
+              stock: current.stock, // Keep main stock unchanged
+            };
+          }
+        } else {
+          // Variant not found - decrement main stock
+          stockToDecrement = available - line.quantity;
+        }
+      }
+      
+      // Build the update payload based on whether we're decrementing variant or main stock
+      const updatePayload: any = {
+        updated_at: new Date().toISOString(),
+      };
+      
+      if (line.variant) {
+        // We already handled the variant stock decrement above and set updateFilter
+        // Apply the variants update if needed
+        if (updateFilter.variants) {
+          updatePayload.variants = updateFilter.variants;
+          // When updating variants, don't update main stock via the .eq('stock') guard
+          // since we want to keep main stock unchanged
+        }
+      } else {
+        // Decrement main product stock
+        updatePayload.stock = stockToDecrement;
+      }
+      
       const { data: updated, error: writeError } = await (client as any)
         .from('products')
-        .update({
-          stock: available - line.quantity,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', line.product_id)
         .eq('stock', current.stock)
         .select('stock');

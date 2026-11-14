@@ -363,7 +363,9 @@ function variantToLine(variant: ProductVariant): string {
  */
 export function calculateEffectiveStock(baseStock: number, variants: ProductVariant[]): number {
   if (!variants || variants.length === 0) return baseStock;
-  return variants.reduce((sum, v) => sum + v.stock, 0);
+  // Return base stock only - variant stocks are tracked individually
+  // This prevents the "collective stock" issue where variant stocks are added to main stock
+  return baseStock;
 }
 
 /**
