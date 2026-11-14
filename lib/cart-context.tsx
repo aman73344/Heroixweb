@@ -27,8 +27,16 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 // Helper to determine if two items are identical (matching both productId and variant)
 function isSameItem(a: CartItem, productId: string, variant?: string): boolean {
   if (a.productId !== productId) return false;
+  // Normalize both variants: trim, lowercase, and treat undefined/empty the same
   const vA = (a.variant || '').trim().toLowerCase();
   const vB = (variant || '').trim().toLowerCase();
+  // BOTH having no variant means they're the same (main product)
+  const noVariantA = vA === '' || vA === 'undefined';
+  const noVariantB = vB === '' || vB === 'undefined';
+  if (noVariantA && noVariantB) return true;
+  // If one has variant and other doesn't, they're different
+  if (noVariantA !== noVariantB) return false;
+  // Both have variants - compare them
   return vA === vB;
 }
 
